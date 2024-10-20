@@ -67,7 +67,7 @@ async function main() {
         sourceRelativePath,
       );
       if (stats.isDirectory()) {
-        fs.copySync(source, destination);
+        fs.copySync(source, destination, { overwrite: false });
       } else {
         fs.copyFileSync(source, destination);
       }
