@@ -7,7 +7,7 @@
   "type": "commonjs",
   "types": "dist/index.d.ts",
   "bin": {
-    "create-dotfiles": "./dist/index.js"
+    "create-dotfiles": "dist/index.js"
   },
   "author": {
     "name": "thilllon",
@@ -21,9 +21,10 @@
     "dotfiles"
   ],
   "scripts": {
-    "format": "prettier --write .",
-    "build": "tsup",
+    "format": "prettier --write --list-different .",
     "dev": "tsx src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
     "publish": "release-it"
   },
   "dependencies": {

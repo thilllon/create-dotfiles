@@ -1,8 +1,18 @@
-import fs from 'fs-extra';
-import path from 'node:path';
-import os from 'node:os';
+#!/bin/env node
 
-async function main() {
+import fs from 'fs-extra';
+import os from 'node:os';
+import path from 'node:path';
+
+(async function () {
+  console.log(`
+  ____   ___ _____ _____ ___ _     _____ ____  
+ |  _ \\ / _ \\_   _|  ___|_ _| |   | ____/ ___| 
+ | | | | | | || | | |_   | || |   |  _| \\___ \\ 
+ | |_| | |_| || | |  _|  | || |___| |___ ___) |
+ |____/ \\___/ |_| |_|   |___|_____|_____|____/
+`);
+
   /**
    * config file(.dotfilesrc)과 설정값들을 모아놓은 폴더(.dotfiles)의 상대 경로 기준이 되는 경로
    */
@@ -20,7 +30,7 @@ async function main() {
    */
   const commentString = '#';
 
-  const rcFile = fs.readFileSync(
+  const rcFilePath = fs.readFileSync(
     path.join(baseDirectory, configFilename),
     'utf8',
   );
@@ -43,19 +53,22 @@ async function main() {
    * .vimrc
    *
    */
-  const sourcePathList = rcFile
+  const sourcePathList = rcFilePath
     .split('\r') // 윈도우 개행문자 제거
     .join('') // 윈도우 개행문자 제거
-    .split('\n') // 개행문자로 분리
+    .split('\\n') // 개행문자로 분리
     .map((line) => line.trim()) // 앞뒤 공백 제거
     .filter((line) => line) // 빈 줄 제거
     .filter((line) => !line.startsWith(commentString)); // 주석 제거
 
   const destDirectory = path.join(baseDirectory, destinationFolderName);
-  if (fs.existsSync(destDirectory)) {
-    throw new Error(`${destDirectory} is already exist.`);
+  if (!fs.existsSync(destDirectory)) {
+    fs.mkdirSync(destDirectory);
   }
-  fs.mkdirSync(destDirectory);
+
+  if (fs.lstatSync(destDirectory).isFile()) {
+    throw new Error(`${destDirectory} is not a directory`);
+  }
 
   for (const sourceRelativePath of sourcePathList) {
     const source = path.join(baseDirectory, sourceRelativePath);
@@ -76,6 +89,4 @@ async function main() {
       console.error(`${sourceRelativePath}: ${error?.message}`);
     }
   }
-}
-
-main();
+})();
