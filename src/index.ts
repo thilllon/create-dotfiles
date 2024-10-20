@@ -30,10 +30,12 @@ import path from 'node:path';
    */
   const commentString = '#';
 
-  const rcFilePath = fs.readFileSync(
-    path.join(baseDirectory, configFilename),
-    'utf8',
-  );
+  const configFilePath = path.join(baseDirectory, configFilename);
+
+  if (!fs.existsSync(configFilePath)) {
+    fs.createFileSync(configFilePath);
+  }
+  const rcFilePath = fs.readFileSync(configFilePath, 'utf8');
 
   /**
    * ################################################################
