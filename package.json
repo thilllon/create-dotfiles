@@ -1,6 +1,6 @@
 {
   "name": "create-dotfiles",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Collect dotfiles in your home directory",
   "license": "MIT",
   "main": "dist/index.js",
