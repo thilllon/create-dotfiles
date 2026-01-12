@@ -1,0 +1,38 @@
+[tools]
+node = "24.12.0"
+pnpm = "latest"
+
+[env]
+NODE_ENV = "development"
+
+[tasks.dev]
+description = "Run development server"
+run = "pnpm dev"
+
+[tasks.build]
+description = "Build the project"
+run = "pnpm build"
+
+[tasks.test]
+description = "Run tests"
+run = "pnpm test"
+
+[tasks.lint]
+description = "Run linter"
+run = "pnpm lint"
+
+[tasks.format]
+description = "Format code"
+run = "pnpm format"
+
+[tasks.check]
+description = "Run lint and test"
+depends = ["lint", "test"]
+
+[tasks.prepublish]
+description = "Prepare for publishing"
+run = """
+pnpm lint
+pnpm test
+pnpm build
+"""
