@@ -39,16 +39,12 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write ."
   },
-  "dependencies": {
-    "fs-extra": "^11.3.3"
-  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@commitlint/cli": "^20.3.1",
     "@commitlint/config-conventional": "^20.3.1",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
-    "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.19.5",
     "semantic-release": "^25.0.2",
     "tsup": "^8.5.1",

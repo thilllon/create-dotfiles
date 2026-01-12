@@ -1,6 +1,6 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import fs from "fs-extra";
 
 const CONFIG_FILE = ".dotfilesrc";
 const BACKUP_DIR = ".dotfiles";
@@ -66,9 +66,9 @@ function backup(): void {
       const stat = fs.lstatSync(srcPath);
 
       if (stat.isDirectory()) {
-        fs.copySync(srcPath, destPath, { overwrite: true });
+        fs.cpSync(srcPath, destPath, { recursive: true, force: true });
       } else {
-        fs.ensureDirSync(path.dirname(destPath));
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
         fs.copyFileSync(srcPath, destPath);
       }
 
@@ -108,9 +108,9 @@ function restore(): void {
       const stat = fs.lstatSync(srcPath);
 
       if (stat.isDirectory()) {
-        fs.copySync(srcPath, destPath, { overwrite: true });
+        fs.cpSync(srcPath, destPath, { recursive: true, force: true });
       } else {
-        fs.ensureDirSync(path.dirname(destPath));
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
         fs.copyFileSync(srcPath, destPath);
       }
 
