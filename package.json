@@ -21,15 +21,8 @@
   "bin": {
     "create-dotfiles": "dist/index.js"
   },
-  "files": [
-    "dist"
-  ],
-  "keywords": [
-    "dotfiles",
-    "sync",
-    "backup",
-    "cli"
-  ],
+  "files": ["dist"],
+  "keywords": ["dotfiles", "sync", "backup", "cli"],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsup",

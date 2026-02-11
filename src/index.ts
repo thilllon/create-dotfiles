@@ -82,9 +82,7 @@ function backup(): void {
 }
 
 function restore(): void {
-  console.log(
-    "\n[Restore] Copying dotfiles from backup to home directory...\n"
-  );
+  console.log("\n[Restore] Copying dotfiles from backup to home directory...\n");
 
   const files = parseConfig();
   const homeDir = getHomeDir();

@@ -28,10 +28,6 @@
     }
   },
   "files": {
-    "ignore": [
-      "node_modules",
-      "dist",
-      "pnpm-lock.yaml"
-    ]
+    "ignore": ["node_modules", "dist", "pnpm-lock.yaml"]
   }
 }
