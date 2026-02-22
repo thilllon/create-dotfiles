@@ -6,10 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["node_modules", "dist", "pnpm-lock.yaml"]
+    "includes": ["src/**", "*.json", "*.ts", "*.mts"]
   },
-  "organizeImports": {
-    "enabled": true
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
   },
   "linter": {
     "enabled": true,

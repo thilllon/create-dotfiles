@@ -1,0 +1,37 @@
+# ~/.dotfilesrc.toml
+
+[settings]
+backup_dir = ".dotfiles"
+
+[files]
+list = [
+  # Shell
+  ".zshrc",
+  ".bashrc",
+  ".bash_profile",
+
+  # Git
+  ".gitconfig",
+  ".gitignore_global",
+
+  # Editor - Vim/Neovim
+  ".vimrc",
+  ".config/nvim",
+
+  # Editor - VS Code
+  "Library/Application Support/Code/User/settings.json",
+  "Library/Application Support/Code/User/keybindings.json",
+  "Library/Application Support/Code/User/snippets",
+
+  # Editor - Cursor
+  "Library/Application Support/Cursor/User/settings.json",
+  "Library/Application Support/Cursor/User/keybindings.json",
+  "Library/Application Support/Cursor/User/snippets",
+
+  # Tools
+  ".tmux.conf",
+  ".config/starship.toml",
+
+  # Node
+  ".npmrc",
+]
