@@ -1,7 +1,16 @@
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { parse } from "smol-toml";
+import { create } from "tar";
 
 interface DotfilesConfig {
   settings?: {
@@ -11,6 +20,45 @@ interface DotfilesConfig {
     list?: string[];
   };
 }
+
+const DEFAULT_CONFIG = `# ~/.dotfilesrc.toml
+
+[settings]
+backup_dir = ".dotfiles"
+
+[files]
+list = [
+  # Shell
+  ".zshrc",
+  ".bashrc",
+  ".bash_profile",
+
+  # Git
+  ".gitconfig",
+  ".gitignore_global",
+
+  # Editor - Vim/Neovim
+  ".vimrc",
+  ".config/nvim",
+
+  # Editor - VS Code
+  "Library/Application Support/Code/User/settings.json",
+  "Library/Application Support/Code/User/keybindings.json",
+  "Library/Application Support/Code/User/snippets",
+
+  # Editor - Cursor
+  "Library/Application Support/Cursor/User/settings.json",
+  "Library/Application Support/Cursor/User/keybindings.json",
+  "Library/Application Support/Cursor/User/snippets",
+
+  # Tools
+  ".tmux.conf",
+  ".config/starship.toml",
+
+  # Node
+  ".npmrc",
+]
+`;
 
 export class DotfileManager {
   private static readonly CONFIG_FILE = ".dotfilesrc.toml";
@@ -29,7 +77,7 @@ export class DotfileManager {
     this.files = config.files?.list ?? [];
   }
 
-  backup(): void {
+  async backup(): Promise<void> {
     console.log("\n[Backup] Copying dotfiles to backup directory...\n");
 
     this.ensureBackupDir();
@@ -46,7 +94,8 @@ export class DotfileManager {
       }
     }
 
-    console.log("\nBackup complete!");
+    const archivePath = await this.createArchive();
+    console.log(`\nBackup complete! Archive: ${archivePath}`);
   }
 
   restore(): void {
@@ -83,9 +132,8 @@ export class DotfileManager {
 
   private parseConfig(): DotfilesConfig {
     if (!existsSync(this.configPath)) {
-      console.error(`Config file not found: ${this.configPath}`);
-      console.log(`Create a ${DotfileManager.CONFIG_FILE} file in your home directory.`);
-      process.exit(1);
+      console.log(`Config file not found. Creating default config: ${this.configPath}`);
+      writeFileSync(this.configPath, DEFAULT_CONFIG, "utf8");
     }
 
     const content = readFileSync(this.configPath, "utf8");
@@ -101,6 +149,19 @@ export class DotfileManager {
     if (!lstatSync(this.backupDir).isDirectory()) {
       throw new Error(`${this.backupDir} is not a directory`);
     }
+  }
+
+  private async createArchive(): Promise<string> {
+    const archivePath = join(this.homeDir, ".dotfiles-backup.tar.gz");
+    await create(
+      {
+        gzip: true,
+        file: archivePath,
+        cwd: this.homeDir,
+      },
+      [this.backupDir.replace(`${this.homeDir}/`, "")]
+    );
+    return archivePath;
   }
 
   private copyFile(srcPath: string, destPath: string): void {

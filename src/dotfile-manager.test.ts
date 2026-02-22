@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DotfileManager } from "./dotfile-manager";
 
 describe("DotfileManager", () => {
@@ -26,7 +26,7 @@ describe("DotfileManager", () => {
   }
 
   describe("backup", () => {
-    it("should copy files to backup directory", () => {
+    it("should copy files to backup directory", async () => {
       writeConfig(`
 [files]
 list = [".testrc"]
@@ -34,14 +34,14 @@ list = [".testrc"]
       createFile(".testrc", "my config");
 
       const manager = new DotfileManager(tempHome);
-      manager.backup();
+      await manager.backup();
 
       const backupPath = join(tempHome, ".dotfiles", ".testrc");
       expect(existsSync(backupPath)).toBe(true);
       expect(readFileSync(backupPath, "utf8")).toBe("my config");
     });
 
-    it("should copy directories recursively", () => {
+    it("should copy directories recursively", async () => {
       writeConfig(`
 [files]
 list = [".config/myapp"]
@@ -50,14 +50,14 @@ list = [".config/myapp"]
       writeFileSync(join(tempHome, ".config", "myapp", "settings.json"), "{}");
 
       const manager = new DotfileManager(tempHome);
-      manager.backup();
+      await manager.backup();
 
       const backupPath = join(tempHome, ".dotfiles", ".config", "myapp", "settings.json");
       expect(existsSync(backupPath)).toBe(true);
       expect(readFileSync(backupPath, "utf8")).toBe("{}");
     });
 
-    it("should use custom backup_dir from config", () => {
+    it("should use custom backup_dir from config", async () => {
       writeConfig(`
 [settings]
 backup_dir = ".my-backup"
@@ -68,20 +68,39 @@ list = [".testrc"]
       createFile(".testrc", "data");
 
       const manager = new DotfileManager(tempHome);
-      manager.backup();
+      await manager.backup();
 
       const backupPath = join(tempHome, ".my-backup", ".testrc");
       expect(existsSync(backupPath)).toBe(true);
     });
 
-    it("should log failure for missing source files", () => {
+    it("should log failure for missing source files", async () => {
       writeConfig(`
 [files]
 list = [".nonexistent"]
 `);
 
       const manager = new DotfileManager(tempHome);
-      expect(() => manager.backup()).not.toThrow();
+      await expect(manager.backup()).resolves.not.toThrow();
+    });
+
+    it("should create a tar.gz archive", async () => {
+      writeConfig(`
+[files]
+list = [".testrc"]
+`);
+      createFile(".testrc", "archive me");
+
+      const manager = new DotfileManager(tempHome);
+      await manager.backup();
+
+      const archivePath = join(tempHome, ".dotfiles-backup.tar.gz");
+      expect(existsSync(archivePath)).toBe(true);
+
+      const stat = readFileSync(archivePath);
+      // gzip magic number: 1f 8b
+      expect(stat[0]).toBe(0x1f);
+      expect(stat[1]).toBe(0x8b);
     });
   });
 
@@ -132,25 +151,27 @@ list = [".testrc"]
   });
 
   describe("config parsing", () => {
-    it("should handle empty file list", () => {
+    it("should handle empty file list", async () => {
       writeConfig(`
 [files]
 list = []
 `);
 
       const manager = new DotfileManager(tempHome);
-      expect(() => manager.backup()).not.toThrow();
+      await expect(manager.backup()).resolves.not.toThrow();
     });
 
-    it("should exit if config file is missing", () => {
-      const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
-        throw new Error("process.exit");
-      });
+    it("should auto-create config if missing", () => {
+      const configPath = join(tempHome, ".dotfilesrc.toml");
+      expect(existsSync(configPath)).toBe(false);
 
-      expect(() => new DotfileManager(tempHome)).toThrow("process.exit");
-      expect(mockExit).toHaveBeenCalledWith(1);
+      const _manager = new DotfileManager(tempHome);
+      expect(existsSync(configPath)).toBe(true);
 
-      mockExit.mockRestore();
+      const content = readFileSync(configPath, "utf8");
+      expect(content).toContain("[settings]");
+      expect(content).toContain("[files]");
+      expect(content).toContain(".zshrc");
     });
   });
 });
