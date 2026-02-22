@@ -19,5 +19,7 @@ dist/
 # Test coverage
 coverage/
 
-# mise
-.mise.local.toml
+# IDE
+.claude/
+.omc/
+
