@@ -1,0 +1,4 @@
+[tools]
+node = "24.13.1"
+pnpm = "latest"
+lefthook = "latest"

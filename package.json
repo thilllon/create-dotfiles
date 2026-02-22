@@ -1,0 +1,49 @@
+{
+  "name": "create-dotfiles",
+  "version": "1.0.0",
+  "description": "Sync dotfiles between your home directory and a backup folder",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thilllon/create-dotfiles"
+  },
+  "homepage": "https://github.com/thilllon/create-dotfiles#readme",
+  "bugs": {
+    "url": "https://github.com/thilllon/create-dotfiles/issues"
+  },
+  "type": "commonjs",
+  "bin": {
+    "create-dotfiles": "dist/cli.cjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "dotfiles",
+    "sync",
+    "backup",
+    "cli"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsdown",
+    "start": "node dist/cli.cjs",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "release": "release-it"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@types/node": "^25.3.0",
+    "cac": "^6.7.14",
+    "release-it": "^19.2.4",
+    "smol-toml": "^1.6.0",
+    "tar": "^7.5.9",
+    "tsdown": "^0.20.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
