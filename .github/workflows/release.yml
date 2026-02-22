@@ -8,9 +8,6 @@ jobs:
     runs-on: ['ubuntu-latest']
     permissions:
       contents: write
-      issues: write
-      pull-requests: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,9 +16,7 @@ jobs:
         with:
           cache: true
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm test
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+        run: pnpm release --ci
