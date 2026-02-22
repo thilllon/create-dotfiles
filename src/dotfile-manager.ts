@@ -1,7 +1,7 @@
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { parse } from 'smol-toml';
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { parse } from "smol-toml";
 
 interface DotfilesConfig {
   settings?: {
@@ -13,7 +13,7 @@ interface DotfilesConfig {
 }
 
 export class DotfileManager {
-  private static readonly CONFIG_FILE = '.dotfilesrc.toml';
+  private static readonly CONFIG_FILE = ".dotfilesrc.toml";
 
   private readonly homeDir: string;
   private readonly configPath: string;
@@ -25,12 +25,12 @@ export class DotfileManager {
     this.configPath = join(this.homeDir, DotfileManager.CONFIG_FILE);
 
     const config = this.parseConfig();
-    this.backupDir = join(this.homeDir, config.settings?.backup_dir ?? '.dotfiles');
+    this.backupDir = join(this.homeDir, config.settings?.backup_dir ?? ".dotfiles");
     this.files = config.files?.list ?? [];
   }
 
   backup(): void {
-    console.log('\n[Backup] Copying dotfiles to backup directory...\n');
+    console.log("\n[Backup] Copying dotfiles to backup directory...\n");
 
     this.ensureBackupDir();
 
@@ -46,11 +46,11 @@ export class DotfileManager {
       }
     }
 
-    console.log('\nBackup complete!');
+    console.log("\nBackup complete!");
   }
 
   restore(): void {
-    console.log('\n[Restore] Copying dotfiles from backup to home directory...\n');
+    console.log("\n[Restore] Copying dotfiles from backup to home directory...\n");
 
     if (!existsSync(this.backupDir)) {
       console.error(`Backup directory not found: ${this.backupDir}`);
@@ -78,19 +78,17 @@ export class DotfileManager {
       }
     }
 
-    console.log('\nRestore complete!');
+    console.log("\nRestore complete!");
   }
 
   private parseConfig(): DotfilesConfig {
     if (!existsSync(this.configPath)) {
       console.error(`Config file not found: ${this.configPath}`);
-      console.log(
-        `Create a ${DotfileManager.CONFIG_FILE} file in your home directory.`
-      );
+      console.log(`Create a ${DotfileManager.CONFIG_FILE} file in your home directory.`);
       process.exit(1);
     }
 
-    const content = readFileSync(this.configPath, 'utf8');
+    const content = readFileSync(this.configPath, "utf8");
     return parse(content) as DotfilesConfig;
   }
 
