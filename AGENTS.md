@@ -20,12 +20,13 @@
 ```
 src/
   cli.ts                # CLI entry point (cac-based, backup/restore commands)
+  cli.test.ts           # End-to-end tests: spawns the CLI as a subprocess
   dotfile-manager.ts    # Core logic: config parsing, backup, restore, archive
   dotfile-manager.test.ts
 dist/                   # Build output (cli.cjs)
 .github/
   workflows/
-    ci.yml              # PR/push checks: lint, typecheck, build
+    ci.yml              # PR/push checks: lint, typecheck, test, build
     release.yml         # Release on workflow_dispatch: build, test, release-it
   dependabot.yml        # Weekly updates for npm and github-actions
 ```
@@ -35,6 +36,7 @@ dist/                   # Build output (cli.cjs)
 ```bash
 pnpm build          # Build with tsdown
 pnpm test           # Run tests with vitest
+pnpm test:coverage  # Run tests with coverage thresholds enforced
 pnpm lint           # Lint with biome
 pnpm format         # Format with biome
 pnpm dev            # Run source directly with tsx
@@ -60,7 +62,13 @@ pnpm release        # Release with release-it (interactive)
 - If config is missing, a default config is auto-created with `DEFAULT_CONFIG` constant
 - Backup directory: `~/.dotfiles` (configurable via `settings.backup_dir`)
 - Backup produces `~/.dotfiles-backup.tar.gz` archive (using tar package)
-- Two commands: `backup` (default) and `restore`
+- Two commands: `backup` (default) and `restore` (`restore --force` overwrites existing files)
+- `DotfileManager` is constructed lazily inside each command action, never at module scope,
+  so `--help` and `--version` do not read or create the config file
+- Expected failures throw `DotfileError`; the CLI prints the message and exits 1 (no stack trace)
+- Config values are validated after parsing: `files.list` must be an array of non-empty
+  strings, and no entry (nor `settings.backup_dir`) may be absolute or escape the home directory
+- Symlinks are dereferenced at every level when copying, so the archive is self-contained
 - Published as a CommonJS package with a `bin` entry pointing to `dist/cli.cjs`
 
 ## Default Config Example
@@ -108,5 +116,10 @@ list = [
 ## Testing
 
 - Test files colocate with source: `src/**/*.test.ts`
-- Vitest with globals enabled
-- Coverage via v8 provider
+- Vitest, node environment, explicit imports (globals are NOT enabled)
+- Coverage via the v8 provider (`@vitest/coverage-v8`), enforced by thresholds in
+  `vitest.config.ts`; `pnpm test:coverage` fails the build if coverage regresses
+- `src/cli.ts` is excluded from coverage thresholds on purpose: `cli.test.ts` exercises it
+  by spawning a real subprocess (the only way to catch module-load side effects), and v8
+  cannot instrument across a process boundary
+- CLI tests point `$HOME` at a temp directory; never let a test touch the real home directory

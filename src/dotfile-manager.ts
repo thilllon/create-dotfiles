@@ -1,14 +1,15 @@
 import {
   copyFileSync,
-  cpSync,
   existsSync,
-  lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  realpathSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse } from "smol-toml";
 import { create } from "tar";
 
@@ -19,6 +20,17 @@ interface DotfilesConfig {
   files?: {
     list?: string[];
   };
+}
+
+/**
+ * An expected, user-facing failure (bad config, missing backup directory).
+ * The CLI reports the message and exits non-zero instead of printing a stack trace.
+ */
+export class DotfileError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DotfileError";
+  }
 }
 
 const DEFAULT_CONFIG = `# ~/.dotfilesrc.toml
@@ -60,6 +72,18 @@ list = [
 ]
 `;
 
+/** Rejects absolute paths and any entry that resolves outside the base directory. */
+function assertContainedPath(base: string, entry: string, label: string): void {
+  if (isAbsolute(entry)) {
+    throw new DotfileError(`${label} must be a relative path, got "${entry}"`);
+  }
+
+  const rel = relative(base, resolve(base, entry));
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`)) {
+    throw new DotfileError(`${label} must stay inside ${base}, got "${entry}"`);
+  }
+}
+
 export class DotfileManager {
   private static readonly CONFIG_FILE = ".dotfilesrc.toml";
 
@@ -73,7 +97,10 @@ export class DotfileManager {
     this.configPath = join(this.homeDir, DotfileManager.CONFIG_FILE);
 
     const config = this.parseConfig();
-    this.backupDir = join(this.homeDir, config.settings?.backup_dir ?? ".dotfiles");
+    const backupDirName = config.settings?.backup_dir ?? ".dotfiles";
+    assertContainedPath(this.homeDir, backupDirName, "settings.backup_dir");
+
+    this.backupDir = join(this.homeDir, backupDirName);
     this.files = config.files?.list ?? [];
   }
 
@@ -98,12 +125,11 @@ export class DotfileManager {
     console.log(`\nBackup complete! Archive: ${archivePath}`);
   }
 
-  restore(): void {
+  restore({ force = false }: { force?: boolean } = {}): void {
     console.log("\n[Restore] Copying dotfiles from backup to home directory...\n");
 
     if (!existsSync(this.backupDir)) {
-      console.error(`Backup directory not found: ${this.backupDir}`);
-      process.exit(1);
+      throw new DotfileError(`Backup directory not found: ${this.backupDir}`);
     }
 
     for (const file of this.files) {
@@ -116,8 +142,8 @@ export class DotfileManager {
           continue;
         }
 
-        if (existsSync(destPath)) {
-          throw new Error(`already exists at ${destPath}`);
+        if (existsSync(destPath) && !force) {
+          throw new Error(`already exists at ${destPath} (use --force to overwrite)`);
         }
 
         this.copyFile(srcPath, destPath);
@@ -137,7 +163,55 @@ export class DotfileManager {
     }
 
     const content = readFileSync(this.configPath, "utf8");
-    return parse(content) as DotfilesConfig;
+
+    let parsed: unknown;
+    try {
+      parsed = parse(content);
+    } catch (err) {
+      throw new DotfileError(`Invalid TOML in ${this.configPath}: ${(err as Error).message}`);
+    }
+
+    return this.validateConfig(parsed);
+  }
+
+  /** `parse()` returns `unknown`; reject malformed shapes here rather than casting blindly. */
+  private validateConfig(parsed: unknown): DotfilesConfig {
+    const root = parsed as Record<string, unknown>;
+    const config: DotfilesConfig = {};
+
+    const settings = root.settings;
+    if (settings !== undefined) {
+      const backupDir = (settings as Record<string, unknown>).backup_dir;
+      if (backupDir !== undefined && typeof backupDir !== "string") {
+        throw new DotfileError(
+          `settings.backup_dir must be a string in ${this.configPath}, got ${typeof backupDir}`
+        );
+      }
+      config.settings = { backup_dir: backupDir as string | undefined };
+    }
+
+    const files = root.files;
+    if (files !== undefined) {
+      const list = (files as Record<string, unknown>).list;
+      if (list !== undefined) {
+        if (!Array.isArray(list)) {
+          throw new DotfileError(
+            `files.list must be an array in ${this.configPath}, got ${typeof list}`
+          );
+        }
+        for (const entry of list) {
+          if (typeof entry !== "string" || entry.trim() === "") {
+            throw new DotfileError(
+              `files.list entries must be non-empty strings in ${this.configPath}, got ${JSON.stringify(entry)}`
+            );
+          }
+          assertContainedPath(this.homeDir, entry, "files.list entry");
+        }
+        config.files = { list: list as string[] };
+      }
+    }
+
+    return config;
   }
 
   private ensureBackupDir(): void {
@@ -146,8 +220,8 @@ export class DotfileManager {
       console.log(`Created backup directory: ${this.backupDir}`);
     }
 
-    if (!lstatSync(this.backupDir).isDirectory()) {
-      throw new Error(`${this.backupDir} is not a directory`);
+    if (!statSync(this.backupDir).isDirectory()) {
+      throw new DotfileError(`${this.backupDir} is not a directory`);
     }
   }
 
@@ -159,19 +233,39 @@ export class DotfileManager {
         file: archivePath,
         cwd: this.homeDir,
       },
-      [this.backupDir.replace(`${this.homeDir}/`, "")]
+      [relative(this.homeDir, this.backupDir)]
     );
     return archivePath;
   }
 
-  private copyFile(srcPath: string, destPath: string): void {
-    const stat = lstatSync(srcPath);
+  /**
+   * Symlinked dotfiles are common, so follow links at every level and copy the real content:
+   * a backup holding links back into $HOME would not restore on another machine. `cpSync`'s
+   * `dereference` only covers the top-level path, hence the manual walk.
+   *
+   * `seen` holds the resolved paths of the directories currently being walked, so a symlink
+   * pointing at one of its own ancestors is reported instead of recursing forever.
+   */
+  private copyFile(srcPath: string, destPath: string, seen: Set<string> = new Set()): void {
+    const stat = statSync(srcPath);
 
-    if (stat.isDirectory()) {
-      cpSync(srcPath, destPath, { recursive: true, force: true });
-    } else {
+    if (!stat.isDirectory()) {
       mkdirSync(dirname(destPath), { recursive: true });
       copyFileSync(srcPath, destPath);
+      return;
     }
+
+    const realPath = realpathSync(srcPath);
+    if (seen.has(realPath)) {
+      throw new Error(`symlink loop detected at ${srcPath}`);
+    }
+    seen.add(realPath);
+
+    mkdirSync(destPath, { recursive: true });
+    for (const entry of readdirSync(srcPath)) {
+      this.copyFile(join(srcPath, entry), join(destPath, entry), seen);
+    }
+
+    seen.delete(realPath);
   }
 }
