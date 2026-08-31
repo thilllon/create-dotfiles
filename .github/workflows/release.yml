@@ -8,6 +8,11 @@ jobs:
     runs-on: ['ubuntu-latest']
     permissions:
       contents: write
+      # Required for npm Trusted Publishing (OIDC): npm exchanges this short-lived
+      # token for publish rights, so no NPM_TOKEN secret is needed. The package must
+      # also be registered on npmjs.com with this repository and workflow as a
+      # trusted publisher, otherwise `npm publish` is rejected.
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -15,6 +20,10 @@ jobs:
       - uses: jdx/mise-action@v3
         with:
           cache: true
+      # Trusted Publishing needs npm >= 11.5.1, which is newer than the npm bundled
+      # with some Node releases. Upgrading here keeps the release independent of that.
+      - run: npm install -g npm@latest
+      - run: npm --version
       - run: pnpm install --frozen-lockfile
       - name: Release
         env:
