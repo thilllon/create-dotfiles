@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import { createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pipeline, type Readable } from "node:stream";
@@ -70,6 +71,11 @@ function summarize(
  * listener there it is an uncaught exception. On any failure both streams are destroyed, which
  * stops yazl from opening further staged files while the caller is cleaning up, and the partial
  * archive is removed.
+ *
+ * The removal waits for the file stream to close first. `createWriteStream` opens the file
+ * asynchronously, so an error that arrives before the open completes would otherwise be followed
+ * by the open creating the file after `rmSync` ran, leaving an empty archive behind (seen
+ * intermittently in CI). Node emits 'close' after `destroy()` even when the open is still pending.
  */
 async function writeZip(plan: Plan, files: readonly PlannedFile[], zipPath: string): Promise<void> {
   const zip = new ZipFile();
@@ -88,7 +94,10 @@ async function writeZip(plan: Plan, files: readonly PlannedFile[], zipPath: stri
     });
   } catch (err) {
     source.destroy();
-    out.destroy();
+    if (!out.closed) {
+      out.destroy();
+      await once(out, "close");
+    }
     rmSync(zipPath, { force: true });
     throw err;
   }
