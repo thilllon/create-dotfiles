@@ -26,6 +26,13 @@ jobs:
       # mise.toml pins, so it fails with EBADENGINE.
       - run: npm --version
       - run: pnpm install --frozen-lockfile
+      # release-it commits the version bump and tags it; the runner has no git identity
+      # by default, so without this the run dies at "Author identity unknown" AFTER
+      # npm publish has already succeeded, leaving npm ahead of git.
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
