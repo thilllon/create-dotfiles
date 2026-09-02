@@ -186,13 +186,70 @@ describe("collect", () => {
     expect(summary.counts.core).toBe(1);
   });
 
-  it("removes the staging folder even when writing an archive fails", async () => {
+  it("has flushed and closed both archives by the time it resolves", async () => {
+    const stray: unknown[] = [];
+    const onUncaught = (err: unknown) => void stray.push(err);
+    process.on("uncaughtException", onUncaught);
+    try {
+      const summary = await run({ formats: ["folder", "zip", "tar"] });
+      // Pull the staged copies away immediately: a writer still reading them would now fail.
+      rmSync(summary.stagingDir, { recursive: true });
+
+      const zipPath = join(out, `${FIXED_NAME}.zip`);
+      const tarPath = join(out, `${FIXED_NAME}.tar.gz`);
+      expect(summary.written).toEqual([summary.stagingDir, zipPath, tarPath]);
+      const entries = unzipSync(readFileSync(zipPath));
+      expect(Object.keys(entries).sort()).toEqual([
+        `${FIXED_NAME}/.config/nvim/lua/init.lua`,
+        `${FIXED_NAME}/.zshrc`,
+      ]);
+      expect(strFromU8(entries[`${FIXED_NAME}/.config/nvim/lua/init.lua`])).toBe("-- vim");
+      expect(await tarEntries(tarPath)).toEqual(
+        expect.arrayContaining([`${FIXED_NAME}/.zshrc`, `${FIXED_NAME}/.config/nvim/lua/init.lua`])
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(stray).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+  });
+
+  it("reports a staged file that vanished before zipping as a rejection, not a crash", async () => {
     const plan = resolveTargets({ homeDir: home, outDir: out, now: FIXED_DATE, formats: ["zip"] });
-    plan.outputs.zip = join(out, "missing-dir", "x.zip");
+    const onProgress = ({ done, total }: CollectProgress) => {
+      if (done === total) rmSync(join(plan.stagingDir, ".zshrc"));
+    };
 
-    await expect(writePlan(plan)).rejects.toThrow(/ENOENT/);
+    await expect(writePlan(plan, { onProgress })).rejects.toThrow(/ENOENT.*\.zshrc/);
 
+    expect(existsSync(join(out, `${FIXED_NAME}.zip`))).toBe(false);
     expect(existsSync(plan.stagingDir)).toBe(false);
+  });
+
+  it("removes the staging folder when the archive cannot be written and stops yazl reading it", async () => {
+    const stray: unknown[] = [];
+    const onUncaught = (err: unknown) => void stray.push(err);
+    process.on("uncaughtException", onUncaught);
+    try {
+      const plan = resolveTargets({
+        homeDir: home,
+        outDir: out,
+        now: FIXED_DATE,
+        formats: ["zip"],
+      });
+      plan.outputs.zip = join(out, "missing-dir", "x.zip");
+
+      await expect(writePlan(plan)).rejects.toThrow(/ENOENT/);
+
+      expect(existsSync(plan.stagingDir)).toBe(false);
+      // Before the fix yazl kept pumping entries after the write stream had failed, hit the
+      // removed staging folder and emitted an 'error' nobody listened for. Let that surface.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(stray).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
   });
 });
 

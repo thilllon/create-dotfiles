@@ -1,5 +1,6 @@
 import { createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { pipeline, type Readable } from "node:stream";
 import { create as createTar } from "tar";
 import { ZipFile } from "yazl";
 import { DotfileError } from "./errors";
@@ -61,21 +62,46 @@ function summarize(
   };
 }
 
-/** Zips the staged copies so the archive holds exactly what the folder holds. */
-function writeZip(plan: Plan, files: readonly PlannedFile[], zipPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const zip = new ZipFile();
-    for (const file of files) {
-      zip.addFile(join(plan.stagingDir, file.path), `${plan.name}/${file.path}`);
-    }
+/**
+ * Zips the staged copies so the archive holds exactly what the folder holds. Resolves only
+ * once the zip file is flushed and closed, so the summary never names an incomplete archive.
+ *
+ * yazl reports an unreadable entry on the ZipFile itself, never on `outputStream`; without a
+ * listener there it is an uncaught exception. On any failure both streams are destroyed, which
+ * stops yazl from opening further staged files while the caller is cleaning up, and the partial
+ * archive is removed.
+ */
+async function writeZip(plan: Plan, files: readonly PlannedFile[], zipPath: string): Promise<void> {
+  const zip = new ZipFile();
+  // yazl types outputStream as the bare interface; it is a PassThrough, which can be destroyed.
+  const source = zip.outputStream as Readable;
+  const out = createWriteStream(zipPath);
 
-    const out = createWriteStream(zipPath);
-    out.once("close", () => resolve());
-    out.on("error", reject);
-    zip.outputStream.on("error", reject);
-    zip.outputStream.pipe(out);
-    zip.end();
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      zip.on("error", reject);
+      for (const file of files) {
+        zip.addFile(join(plan.stagingDir, file.path), `${plan.name}/${file.path}`);
+      }
+      pipeline(source, out, (err) => (err ? reject(err) : resolve()));
+      zip.end();
+    });
+  } catch (err) {
+    source.destroy();
+    out.destroy();
+    rmSync(zipPath, { force: true });
+    throw err;
+  }
+}
+
+/** Tars the staged folder; a failed attempt does not leave a partial archive behind. */
+async function writeTar(plan: Plan, tarPath: string): Promise<void> {
+  try {
+    await createTar({ gzip: true, file: tarPath, cwd: plan.outDir, portable: true }, [plan.name]);
+  } catch (err) {
+    rmSync(tarPath, { force: true });
+    throw err;
+  }
 }
 
 /** Plans and writes in one step; the usual entry point. */
@@ -119,9 +145,7 @@ export async function writePlan(plan: Plan, options: WriteOptions = {}): Promise
       written.push(plan.outputs.zip);
     }
     if (plan.outputs.tar !== undefined) {
-      await createTar({ gzip: true, file: plan.outputs.tar, cwd: plan.outDir, portable: true }, [
-        plan.name,
-      ]);
+      await writeTar(plan, plan.outputs.tar);
       written.push(plan.outputs.tar);
     }
   } finally {
