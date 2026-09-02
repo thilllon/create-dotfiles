@@ -12,6 +12,16 @@
     "url": "https://github.com/thilllon/create-dotfiles/issues"
   },
   "type": "commonjs",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.cts",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "create-dotfiles": "dist/cli.cjs"
   },
