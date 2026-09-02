@@ -135,7 +135,9 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
 - **Failures are per file**: one unreadable file is reported in the summary and the run continues.
 - **Config file** `~/.dotfilesrc.toml` is optional and never created. `[files] include`/`exclude`
   and `[settings]` (`include_env`, `include_config`, `formats`, `max_file_size_mb`, `out`) are
-  validated: entries must be non-empty strings, relative, and confined to the home directory. A
+  validated: entries must be non-empty strings, relative, and confined to the home directory, and
+  are then normalized (`./x`, `a/../b`, trailing slashes) so the spelling never reaches archive
+  entry names — yazl rejects `..` segments. Error messages still quote what the user wrote. A
   legacy `[files] list` key is treated as `include`. Precedence: flags > config file > defaults.
 - **Nothing reads the home directory on `--help`/`--version`**; everything is constructed inside
   command actions, never at module scope (this was a real bug once).
