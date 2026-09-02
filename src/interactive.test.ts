@@ -157,6 +157,7 @@ describe("runInteractive", () => {
     expect(never?.message).toContain("node_modules");
     expect(never?.message).toContain("SSH private keys");
     expect(never?.message).toContain("larger than 10 MB");
+    expect(never?.message).toContain("never enters ~/Library, ~/Desktop, ~/Documents");
   });
 
   it("collects only the core group into a folder with the default answers", async () => {

@@ -7,6 +7,7 @@ import {
   compileExcludes,
   DEFAULT_TARGETS,
   ENV_SCAN_MAX_DEPTH,
+  ENV_SCAN_SKIPPED_FOLDERS,
   isEnvFile,
   isExcluded,
   type TargetGroup,
@@ -112,8 +113,10 @@ function byName(a: Dirent, b: Dirent): number {
 
 /**
  * Finds `.env` / `.env.*` files at most {@link ENV_SCAN_MAX_DEPTH} levels below the home
- * directory. Excluded directories are not entered and symlinked directories are not followed,
- * so the scan cannot wander into `node_modules` or out of the home directory.
+ * directory. Excluded directories and the top-level {@link ENV_SCAN_SKIPPED_FOLDERS} are not
+ * entered and symlinked directories are not followed, so the scan cannot wander into
+ * `node_modules`, out of the home directory, or into folders macOS gates behind a permission
+ * prompt.
  */
 export function scanEnvFiles(
   homeDir: string,
@@ -135,8 +138,12 @@ export function scanEnvFiles(
       if (excluded(rel)) continue;
 
       if (entry.isDirectory()) {
-        // `isDirectory()` is false for symlinks, so linked trees are never entered.
-        if (depth + 1 < ENV_SCAN_MAX_DEPTH) visit(join(absDir, entry.name), rel, depth + 1);
+        // Real directories only (`isDirectory()` is false for symlinks), and never the top-level
+        // macOS user folders: listing those triggers "Terminal would like to access" prompts.
+        const guarded = relDir === "" && ENV_SCAN_SKIPPED_FOLDERS.includes(entry.name);
+        if (!guarded && depth + 1 < ENV_SCAN_MAX_DEPTH) {
+          visit(join(absDir, entry.name), rel, depth + 1);
+        }
       } else if (isEnvFile(entry.name)) {
         try {
           const stat = statSync(join(absDir, entry.name));

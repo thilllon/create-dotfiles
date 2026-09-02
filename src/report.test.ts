@@ -149,6 +149,10 @@ describe("formatNeverCopied", () => {
     expect(text).toContain("GPG private keys");
     expect(text).toContain("private-keys-v1.d");
     expect(text).toContain("larger than 10 MB");
+    expect(text).toContain("4 levels deep");
+    expect(text).toContain(
+      "never enters ~/Library, ~/Desktop, ~/Documents, ~/Downloads, ~/Movies, ~/Music, ~/Pictures, ~/Public"
+    );
     expect(formatNeverCopied(25)).toContain("larger than 25 MB");
   });
 });

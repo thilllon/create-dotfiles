@@ -124,6 +124,22 @@ const HARD_EXCLUDED = new Set(HARD_EXCLUDED_DIR_NAMES);
 /** How deep below the home directory the `.env` scan looks: `~/a/b/c/.env` is depth 4. */
 export const ENV_SCAN_MAX_DEPTH = 4;
 
+/**
+ * Top-level home folders the `.env` scan never enters (the scan only: core targets such as the
+ * VS Code settings under `~/Library` are still collected). On macOS, merely listing these
+ * triggers the "Terminal would like to access your Documents folder" permission prompts.
+ */
+export const ENV_SCAN_SKIPPED_FOLDERS: readonly string[] = [
+  "Library",
+  "Desktop",
+  "Documents",
+  "Downloads",
+  "Movies",
+  "Music",
+  "Pictures",
+  "Public",
+];
+
 /** `dotfiles-YYYYMMDD-HHMMSS`, the name of every collection folder this tool writes. */
 export const COLLECTION_NAME_PATTERN = /^dotfiles-\d{8}-\d{6}$/;
 

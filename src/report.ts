@@ -1,7 +1,12 @@
 import type { CollectSummary } from "./collect";
 import type { FoundTarget, PlannedFile } from "./plan";
 import type { RestoreSummary } from "./restore";
-import { HARD_EXCLUDED_DIR_NAMES, type TargetGroup } from "./targets";
+import {
+  ENV_SCAN_MAX_DEPTH,
+  ENV_SCAN_SKIPPED_FOLDERS,
+  HARD_EXCLUDED_DIR_NAMES,
+  type TargetGroup,
+} from "./targets";
 
 const GROUP_ORDER: readonly TargetGroup[] = ["core", "custom", "secrets", "config-all"];
 
@@ -106,6 +111,7 @@ export function formatNeverCopied(maxFileSizeMb: number): string {
     "SSH private keys: everything in ~/.ssh except config and *.pub",
     "GPG private keys: ~/.gnupg/private-keys-v1.d, *.gpg and *.kbx",
     `Files larger than ${maxFileSizeMb} MB`,
-    ".env files and other secrets unless you opt in",
+    ".env files and other secrets unless you opt in (--include-env)",
+    `The .env scan looks ${ENV_SCAN_MAX_DEPTH} levels deep and never enters ${ENV_SCAN_SKIPPED_FOLDERS.map((name) => `~/${name}`).join(", ")}`,
   ].join("\n");
 }

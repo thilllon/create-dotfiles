@@ -64,6 +64,7 @@ describe("cli", () => {
       }
       expect(stdout).toContain("SSH private keys");
       expect(stdout).toContain("node_modules");
+      expect(stdout).toContain("never enters ~/Library, ~/Desktop, ~/Documents");
       expect(stdout).toContain(".dotfilesrc.toml");
     });
 

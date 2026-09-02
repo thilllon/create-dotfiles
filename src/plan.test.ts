@@ -13,6 +13,7 @@ import {
   type Plan,
   resolveTargets,
 } from "./plan";
+import { ENV_SCAN_SKIPPED_FOLDERS } from "./targets";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
 
 describe("collectionName", () => {
@@ -220,6 +221,41 @@ describe("resolveTargets", () => {
       expect(p.files.find((f) => f.path === ".npmrc")?.target).toBe(".npmrc");
       expect(p.files.find((f) => f.path === ".env")?.target).toBe(ENV_SCAN_TARGET);
       expect(p.missing.map((m) => m.path)).toContain(".netrc");
+    });
+
+    it("never enters the top-level macOS user folders during the scan, and only those", () => {
+      createFile(home, "Documents/proj/.env", "DOC=1");
+      createFile(home, "Desktop/.env", "DESK=1");
+      createFile(home, "Downloads/x/.env", "DL=1");
+      createFile(home, "Library/Application Support/App/.env", "LIB=1");
+      createFile(home, "Library/Application Support/Code/User/settings.json", "{}");
+      createFile(home, "projects/proj/.env", "PROJ=1");
+      createFile(home, "work/Documents/.env", "NESTED=1");
+
+      const found = paths(plan({ includeEnv: true }));
+
+      expect(ENV_SCAN_SKIPPED_FOLDERS).toEqual([
+        "Library",
+        "Desktop",
+        "Documents",
+        "Downloads",
+        "Movies",
+        "Music",
+        "Pictures",
+        "Public",
+      ]);
+      expect(found).toContain("projects/proj/.env");
+      expect(found).toContain("work/Documents/.env");
+      for (const skipped of [
+        "Documents/proj/.env",
+        "Desktop/.env",
+        "Downloads/x/.env",
+        "Library/Application Support/App/.env",
+      ]) {
+        expect(found).not.toContain(skipped);
+      }
+      // Core targets under ~/Library come from the target walk, which the skip does not touch.
+      expect(found).toContain("Library/Application Support/Code/User/settings.json");
     });
 
     it("does not descend into excluded directories during the scan", () => {
