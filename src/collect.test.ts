@@ -22,10 +22,25 @@ import { DotfileError } from "./errors";
 import { resolveTargets } from "./plan";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
 
-async function tarEntries(file: string): Promise<string[]> {
-  const entries: string[] = [];
-  await tarList({ file, onReadEntry: (entry) => entries.push(entry.path) });
+async function tarEntries(file: string): Promise<{ path: string; type: string }[]> {
+  const entries: { path: string; type: string }[] = [];
+  await tarList({
+    file,
+    onReadEntry: (entry) => entries.push({ path: entry.path, type: String(entry.type) }),
+  });
   return entries;
+}
+
+/** Sorted paths of the regular files in a tar (directory entries left out). */
+async function tarFileEntries(file: string): Promise<string[]> {
+  return (await tarEntries(file))
+    .filter((entry) => entry.type === "File")
+    .map((entry) => entry.path)
+    .sort();
+}
+
+function zipEntries(file: string): string[] {
+  return Object.keys(unzipSync(readFileSync(file))).sort();
 }
 
 describe("collect", () => {
@@ -74,17 +89,19 @@ describe("collect", () => {
     expect(strFromU8(entries[`${FIXED_NAME}/.config/nvim/lua/init.lua`])).toBe("-- vim");
   });
 
-  it("writes a gzip tar with the same layout", async () => {
-    const summary = await run({ formats: ["tar"] });
+  it("writes a gzip tar whose file entries are exactly the zip's", async () => {
+    const summary = await run({ formats: ["zip", "tar"] });
 
+    const zipPath = join(out, `${FIXED_NAME}.zip`);
     const tarPath = join(out, `${FIXED_NAME}.tar.gz`);
-    expect(summary.written).toEqual([tarPath]);
+    expect(summary.written).toEqual([zipPath, tarPath]);
     const bytes = readFileSync(tarPath);
     expect([bytes[0], bytes[1]]).toEqual([0x1f, 0x8b]);
-    const entries = await tarEntries(tarPath);
-    expect(entries).toContain(`${FIXED_NAME}/.zshrc`);
-    expect(entries).toContain(`${FIXED_NAME}/.config/nvim/lua/init.lua`);
-    expect(entries.every((e) => e.startsWith(`${FIXED_NAME}/`))).toBe(true);
+    const expected = [`${FIXED_NAME}/.config/nvim/lua/init.lua`, `${FIXED_NAME}/.zshrc`];
+    expect(await tarFileEntries(tarPath)).toEqual(expected);
+    expect(zipEntries(zipPath)).toEqual(expected);
+    const all = (await tarEntries(tarPath)).map((entry) => entry.path);
+    expect(all.filter((path) => !path.startsWith(`${FIXED_NAME}/`))).toEqual([]);
   });
 
   it("removes the staging folder when folder is not among the formats", async () => {
@@ -152,14 +169,22 @@ describe("collect", () => {
     expect(readFileSync(copy, "utf8")).toBe("set nu");
   });
 
-  it("refuses to write over an existing output", async () => {
-    mkdirSync(join(out, FIXED_NAME), { recursive: true });
+  it("refuses to write over an existing output, names it, and writes nothing else", async () => {
+    const folder = join(out, FIXED_NAME);
+    mkdirSync(folder, { recursive: true });
     await expect(run()).rejects.toThrow(DotfileError);
-    await expect(run()).rejects.toThrow(/already exists/);
+    await expect(run()).rejects.toThrow(`Output already exists: ${folder}`);
+    expect(readdirSync(folder)).toEqual([]);
+    rmSync(folder, { recursive: true });
 
+    const zipPath = join(out, `${FIXED_NAME}.zip`);
     createFile(out, `${FIXED_NAME}.zip`, "old");
-    await expect(run({ formats: ["zip"] })).rejects.toThrow(/already exists/);
-    expect(readFileSync(join(out, `${FIXED_NAME}.zip`), "utf8")).toBe("old");
+    await expect(run({ formats: ["zip", "tar"] })).rejects.toThrow(
+      `Output already exists: ${zipPath}`
+    );
+    expect(readFileSync(zipPath, "utf8")).toBe("old");
+    // Neither the staging folder nor the tar was started.
+    expect(readdirSync(out)).toEqual([`${FIXED_NAME}.zip`]);
   });
 
   it("reports progress after each file", async () => {
@@ -198,15 +223,11 @@ describe("collect", () => {
       const zipPath = join(out, `${FIXED_NAME}.zip`);
       const tarPath = join(out, `${FIXED_NAME}.tar.gz`);
       expect(summary.written).toEqual([summary.stagingDir, zipPath, tarPath]);
+      const expected = [`${FIXED_NAME}/.config/nvim/lua/init.lua`, `${FIXED_NAME}/.zshrc`];
       const entries = unzipSync(readFileSync(zipPath));
-      expect(Object.keys(entries).sort()).toEqual([
-        `${FIXED_NAME}/.config/nvim/lua/init.lua`,
-        `${FIXED_NAME}/.zshrc`,
-      ]);
+      expect(Object.keys(entries).sort()).toEqual(expected);
       expect(strFromU8(entries[`${FIXED_NAME}/.config/nvim/lua/init.lua`])).toBe("-- vim");
-      expect(await tarEntries(tarPath)).toEqual(
-        expect.arrayContaining([`${FIXED_NAME}/.zshrc`, `${FIXED_NAME}/.config/nvim/lua/init.lua`])
-      );
+      expect(await tarFileEntries(tarPath)).toEqual(expected);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(stray).toEqual([]);

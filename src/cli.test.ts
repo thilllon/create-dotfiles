@@ -66,6 +66,8 @@ describe("cli", () => {
       expect(stdout).toContain("node_modules");
       expect(stdout).toContain("never enters ~/Library, ~/Desktop, ~/Documents");
       expect(stdout).toContain(".dotfilesrc.toml");
+      // Nothing under $HOME is read or written on --help (module scope must stay side-effect free).
+      expect(readdirSync(tempHome)).toEqual([]);
     });
 
     it("documents --force and the default source on restore --help", () => {
@@ -74,12 +76,6 @@ describe("cli", () => {
       expect(status).toBe(0);
       expect(stdout).toContain("restore [source]");
       expect(stdout).toContain("--force");
-      expect(readdirSync(tempHome)).toEqual([]);
-    });
-
-    it("leaves the home directory untouched for --help", () => {
-      runCli("--help");
-
       expect(readdirSync(tempHome)).toEqual([]);
     });
 
@@ -213,10 +209,12 @@ describe("cli", () => {
     it("--include-config picks up everything under ~/.config", () => {
       createFile(tempHome, ".config/tool/config.toml", "a = 1");
 
-      runCli("--auto", "--include-config");
+      const { status, stdout } = runCli("--auto", "--include-config");
 
+      expect(status).toBe(0);
       const [name] = collections();
       expect(existsSync(join(tempHome, name, ".config/tool/config.toml"))).toBe(true);
+      expect(stdout).toContain("Per group: core 3, custom 0, secrets 0, config-all 1");
     });
 
     it("rejects an unknown --format value without a stack trace", () => {

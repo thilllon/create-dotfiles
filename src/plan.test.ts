@@ -13,7 +13,6 @@ import {
   type Plan,
   resolveTargets,
 } from "./plan";
-import { ENV_SCAN_SKIPPED_FOLDERS } from "./targets";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
 
 describe("collectionName", () => {
@@ -121,10 +120,17 @@ describe("resolveTargets", () => {
       expect(p.maxFileSizeMb).toBe(10);
     });
 
-    it("rejects an invalid size cap and an unknown format", () => {
-      expect(() => plan({ maxFileSizeMb: 0 })).toThrow(DotfileError);
-      expect(() => plan({ maxFileSizeMb: Number.NaN })).toThrow(/max file size/);
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+      "rejects a size cap of %s with a DotfileError quoting the value",
+      (cap) => {
+        expect(() => plan({ maxFileSizeMb: cap })).toThrow(DotfileError);
+        expect(() => plan({ maxFileSizeMb: cap })).toThrow(`Invalid max file size "${cap}"`);
+      }
+    );
+
+    it("rejects an unknown format with a DotfileError quoting the value", () => {
       expect(() => plan({ formats: ["rar" as "zip"] })).toThrow(DotfileError);
+      expect(() => plan({ formats: ["rar" as "zip"] })).toThrow('Unknown output format "rar"');
     });
   });
 
@@ -223,18 +229,8 @@ describe("resolveTargets", () => {
       expect(p.missing.map((m) => m.path)).toContain(".netrc");
     });
 
-    it("never enters the top-level macOS user folders during the scan, and only those", () => {
-      createFile(home, "Documents/proj/.env", "DOC=1");
-      createFile(home, "Desktop/.env", "DESK=1");
-      createFile(home, "Downloads/x/.env", "DL=1");
-      createFile(home, "Library/Application Support/App/.env", "LIB=1");
-      createFile(home, "Library/Application Support/Code/User/settings.json", "{}");
-      createFile(home, "projects/proj/.env", "PROJ=1");
-      createFile(home, "work/Documents/.env", "NESTED=1");
-
-      const found = paths(plan({ includeEnv: true }));
-
-      expect(ENV_SCAN_SKIPPED_FOLDERS).toEqual([
+    it("never enters the top-level macOS user folders during the scan, only nested namesakes", () => {
+      const skipped = [
         "Library",
         "Desktop",
         "Documents",
@@ -243,17 +239,25 @@ describe("resolveTargets", () => {
         "Music",
         "Pictures",
         "Public",
-      ]);
-      expect(found).toContain("projects/proj/.env");
-      expect(found).toContain("work/Documents/.env");
-      for (const skipped of [
-        "Documents/proj/.env",
-        "Desktop/.env",
-        "Downloads/x/.env",
-        "Library/Application Support/App/.env",
-      ]) {
-        expect(found).not.toContain(skipped);
+      ];
+      for (const folder of skipped) {
+        createFile(home, `${folder}/.env`, "TOP=1");
+        createFile(home, `${folder}/proj/.env`, "NESTED=1");
       }
+      createFile(home, "Library/Application Support/Code/User/settings.json", "{}");
+      createFile(home, "projects/proj/.env", "PROJ=1");
+      createFile(home, "work/Documents/.env", "DOCS=1");
+      createFile(home, "work/Library/.env", "LIB=1");
+
+      const found = paths(plan({ includeEnv: true }));
+
+      const inSkippedFolders = found.filter((path) =>
+        skipped.some((folder) => path.startsWith(`${folder}/`) && path.endsWith(".env"))
+      );
+      expect(inSkippedFolders).toEqual([]);
+      expect(found).toEqual(
+        expect.arrayContaining(["projects/proj/.env", "work/Documents/.env", "work/Library/.env"])
+      );
       // Core targets under ~/Library come from the target walk, which the skip does not touch.
       expect(found).toContain("Library/Application Support/Code/User/settings.json");
     });

@@ -7,8 +7,9 @@ describe("parseFormats", () => {
     expect(parseFormats("zip,folder,zip")).toEqual(["zip", "folder"]);
   });
 
-  it("accepts tar.gz and tgz as spellings of tar", () => {
+  it("accepts tar.gz and tgz, in any case, as spellings of tar", () => {
     expect(parseFormats("tar.gz,tgz")).toEqual(["tar"]);
+    expect(parseFormats("Tar.Gz,TGZ,tar")).toEqual(["tar"]);
   });
 
   it("accepts an already split list, trimming and ignoring case", () => {

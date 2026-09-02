@@ -197,15 +197,26 @@ describe("runInteractive", () => {
     );
   });
 
-  it("uses flags and config settings as the pre-filled defaults", async () => {
-    const prompter = accept({ confirm: [true, true, true], multiselect: [["zip"]] });
+  it("pre-fills the prompts from flags and config settings, but the answers decide", async () => {
+    createFile(
+      home,
+      ".dotfilesrc.toml",
+      '[settings]\ninclude_config = true\nformats = ["zip", "tar"]'
+    );
+    const prompter = accept({ confirm: [false, false, true], multiselect: [["folder"]] });
 
-    await run(prompter, { includeEnv: true, formats: ["zip", "tar"], maxFileSizeMb: 3 });
+    const result = await run(prompter, { includeEnv: true, maxFileSizeMb: 3 });
 
-    expect(prompter.confirms[0].initialValue).toBe(true);
-    expect(prompter.confirms[1].initialValue).toBe(false);
+    expect(prompter.confirms.map((c) => c.initialValue)).toEqual([true, true, true]);
     expect(prompter.multiselects[0].initialValues).toEqual(["zip", "tar"]);
     expect(prompter.notes[1].message).toContain("larger than 3 MB");
+    expect(result.cancelled).toBe(false);
+    if (result.cancelled) return;
+    expect(result.summary.counts).toEqual({ core: 3, secrets: 0, "config-all": 0, custom: 0 });
+    expect(result.summary.formats).toEqual(["folder"]);
+    expect(readdirSync(out)).toEqual([FIXED_NAME]);
+    expect(existsSync(join(out, FIXED_NAME, ".npmrc"))).toBe(false);
+    expect(existsSync(join(out, FIXED_NAME, ".config/tool/config.toml"))).toBe(false);
   });
 
   it("shows the output paths and file count before the final confirm", async () => {
@@ -247,6 +258,7 @@ describe("runInteractive", () => {
       expect(result).toEqual({ cancelled: true });
       expect(prompter.cancelMessage).toBe("Cancelled.");
       expect(prompter.outroMessage).toBeUndefined();
+      expect(prompter.spinnerLog.some((l) => l.startsWith("start:Collecting"))).toBe(false);
       expect(existsSync(out)).toBe(false);
       expect(readdirSync(home).sort()).toEqual(before);
     }
@@ -262,16 +274,24 @@ describe("runInteractive", () => {
     expect(existsSync(out)).toBe(false);
   });
 
-  it("asks for the formats again until at least one is chosen", async () => {
-    const prompter = accept({ multiselect: [[], [], ["tar"]] });
+  it("re-asks once per empty formats answer, with a note in between, then uses the answer", async () => {
+    const prompter = accept({ multiselect: [[], ["tar"]] });
 
     const result = await run(prompter);
 
-    expect(prompter.multiselects).toHaveLength(3);
-    expect(
-      prompter.notes.filter((n) => n.message === "Select at least one output format.")
-    ).toHaveLength(2);
+    const first = prompter.events.indexOf("multiselect:Output formats");
+    expect(prompter.events.slice(first, first + 4)).toEqual([
+      "multiselect:Output formats",
+      "note:Output formats",
+      "multiselect:Output formats",
+      "note:Output",
+    ]);
+    expect(prompter.notes.filter((n) => n.title === "Output formats")).toEqual([
+      { title: "Output formats", message: "Select at least one output format." },
+    ]);
     expect(result.cancelled).toBe(false);
+    if (result.cancelled) return;
+    expect(result.summary.formats).toEqual(["tar"]);
     expect(readdirSync(out)).toEqual([`${FIXED_NAME}.tar.gz`]);
   });
 
