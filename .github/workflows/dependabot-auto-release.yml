@@ -11,8 +11,9 @@ name: Dependabot auto-release
 # workflow are rejected. workflow_dispatch is one of the two event types that
 # GITHUB_TOKEN is allowed to trigger, so no PAT is needed.
 #
-# Loop safety: release-it pushes its version commit and tag with GITHUB_TOKEN, which
-# does not trigger CI, so a release can never re-enter this workflow.
+# Loop safety: release-it pushes only a tag (main is protected; see release.yml), CI
+# runs on branch pushes and pull requests rather than tags, and pushes made with
+# GITHUB_TOKEN do not trigger workflows anyway, so a release can never re-enter here.
 #
 # Only minor and patch updates are merged automatically. A major bump can change
 # behaviour (cac 6 -> 7 would) and is left open for a human.

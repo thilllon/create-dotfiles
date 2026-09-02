@@ -1,7 +1,10 @@
 {
   "git": {
-    "commitMessage": "chore(release): v${version}",
-    "tagName": "v${version}"
+    "requireBranch": "main",
+    "commit": false,
+    "tag": true,
+    "tagName": "v${version}",
+    "push": false
   },
   "npm": {
     "publish": true,
@@ -9,6 +12,7 @@
   },
   "hooks": {
     "before:init": ["pnpm lint", "pnpm test"],
-    "after:bump": "pnpm build"
+    "after:bump": "pnpm build",
+    "after:release": "git push origin refs/tags/v${version}"
   }
 }

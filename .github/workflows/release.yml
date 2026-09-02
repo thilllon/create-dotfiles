@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish. Default: latest on npm + one patch."
+        required: false
+        type: string
 
 # Queue concurrent releases instead of running them in parallel. Two runs started from
 # the same main would both bump to the same version; the second would then fail at
@@ -44,7 +49,22 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # main is a protected branch that GITHUB_TOKEN cannot push to (GH006), so the
+      # version bump is never committed: npm is the source of truth for the version.
+      # The next version is latest-on-npm + one patch unless given explicitly;
+      # release-it rewrites package.json before building, publishes, and pushes only
+      # the tag, which the token is allowed to do. The version field on main is
+      # therefore informational.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm release --ci
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          LATEST=$(npm view create-dotfiles version)
+          if [ -n "$REQUESTED" ]; then
+            NEXT="$REQUESTED"
+          else
+            NEXT=$(node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); console.log(`${a}.${b}.${c+1}`)' "$LATEST")
+          fi
+          echo "npm has $LATEST; releasing $NEXT"
+          pnpm release --ci "$NEXT"
