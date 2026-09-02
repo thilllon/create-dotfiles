@@ -415,6 +415,18 @@ describe("resolveTargets", () => {
       expect(p.missing).toContainEqual({ path: "absent.txt", group: "custom" });
     });
 
+    it("plans includes spelled with ./, a trailing / or .. under their clean paths, once", () => {
+      createFile(home, "notes/todo.md", "todo");
+
+      const p = plan({ config: config('[files]\ninclude = ["./notes/", "x/../notes/todo.md"]') });
+
+      expect(p.files).toEqual([
+        { path: "notes/todo.md", size: 4, group: "custom", target: "notes" },
+      ]);
+      expect(p.found.map((f) => f.path)).toEqual(["notes", "notes/todo.md"]);
+      expect(p.failed).toEqual([]);
+    });
+
     it("applies excludes by directory name and by path", () => {
       createFile(home, ".config/app/a.toml");
       createFile(home, ".config/app/secret/x");

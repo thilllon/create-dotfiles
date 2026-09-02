@@ -79,6 +79,20 @@ describe("parseConfig", () => {
     });
   });
 
+  it("normalizes include and exclude entries to one spelling per path", () => {
+    const config = parseConfig(
+      [
+        "[files]",
+        'include = ["./x", "b/", "a/../b", "c//d/", "spaces dir/ünï cödé.txt"]',
+        'exclude = ["./tmp/", "e/../f", "name"]',
+      ].join("\n"),
+      home
+    );
+
+    expect(config.include).toEqual(["x", "b", "c/d", "spaces dir/ünï cödé.txt"]);
+    expect(config.exclude).toEqual(["tmp", "f", "name"]);
+  });
+
   it.each([
     ["malformed TOML", "[files\ninclude = broken", /Invalid TOML/],
     ["a [files] value that is not a table", "files = 1", /\[files\] must be a table/],
@@ -90,6 +104,12 @@ describe("parseConfig", () => {
     ["an absolute include entry", '[files]\ninclude = ["/etc/passwd"]', /must be a relative path/],
     ["an include entry escaping home", '[files]\ninclude = ["../x"]', /must stay inside/],
     ["an include entry naming home itself", '[files]\ninclude = ["."]', /must stay inside/],
+    ["an include entry naming home as ./", '[files]\ninclude = ["./"]', /must stay inside/],
+    [
+      "an include entry escaping home through a nested ..",
+      '[files]\ninclude = ["a/../../x"]',
+      /must stay inside .*, got "a\/\.\.\/\.\.\/x"/,
+    ],
     ["an exclude entry escaping home", '[files]\nexclude = ["../x"]', /must stay inside/],
     ["a non-numeric size cap", '[settings]\nmax_file_size_mb = "10"', /positive number/],
     ["a zero size cap", "[settings]\nmax_file_size_mb = 0", /positive number/],

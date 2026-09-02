@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { parse } from "smol-toml";
 import { DotfileError } from "./errors";
 import { type OutputFormat, parseFormats } from "./formats";
@@ -62,6 +62,7 @@ function pathList(value: unknown, key: string, homeDir: string, configPath: stri
     throw new DotfileError(`${key} must be an array in ${configPath}, got ${typeof value}`);
   }
 
+  const entries: string[] = [];
   for (const entry of value) {
     if (typeof entry !== "string" || entry.trim() === "") {
       throw new DotfileError(
@@ -69,8 +70,18 @@ function pathList(value: unknown, key: string, homeDir: string, configPath: stri
       );
     }
     assertContainedPath(homeDir, entry, `${key} entry`);
+    entries.push(normalizeEntry(entry));
   }
-  return value as string[];
+  return entries;
+}
+
+/**
+ * `./x`, `x/`, `a//b` and `a/../b` all name the same home-relative path. One spelling keeps the
+ * summary, the staged copy and the archive entry names in agreement; yazl refuses an entry name
+ * with a `..` segment outright, so an unnormalized include used to fail the zip.
+ */
+function normalizeEntry(entry: string): string {
+  return posix.normalize(entry).replace(/(.)\/+$/, "$1");
 }
 
 function parseSettings(settings: Table, configPath: string): DotfilesSettings {

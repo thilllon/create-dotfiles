@@ -138,6 +138,20 @@ describe("collect", () => {
     }
   );
 
+  it("zips an include spelled with .. under its clean name instead of failing", async () => {
+    createFile(home, "notes/todo.md", "todo");
+    const config = parseConfig('[files]\ninclude = ["x/../notes/", "./notes/todo.md"]', home);
+
+    const summary = await run({ config, formats: ["zip", "tar"] });
+
+    expect(summary.copied.map((f) => f.path)).toContain("notes/todo.md");
+    expect(zipEntries(join(out, `${FIXED_NAME}.zip`))).toContain(`${FIXED_NAME}/notes/todo.md`);
+    expect(await tarFileEntries(join(out, `${FIXED_NAME}.tar.gz`))).toContain(
+      `${FIXED_NAME}/notes/todo.md`
+    );
+    expect(summary.failed).toEqual([]);
+  });
+
   it("keeps spaces and non-ASCII characters in paths through folder, zip and tar", async () => {
     const rel = "spaces dir/ünï cödé.txt";
     createFile(home, rel, "ü");
