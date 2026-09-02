@@ -6,14 +6,17 @@
 
 ## Tech Stack
 
-- **Runtime**: Node.js 24.x
-- **Package Manager**: pnpm
-- **Language**: TypeScript (strict mode, target ES2022, CommonJS output)
-- **Bundler**: tsdown (config: `tsdown.config.mts`)
-- **Linter/Formatter**: Biome (double quotes, semicolons, 2-space indent, 100 line width)
-- **Test**: Vitest (node environment, tests in `src/**/*.test.ts`)
-- **Release**: release-it (workflow_dispatch trigger)
-- **CI/CD**: GitHub Actions (CI on PR/push, Release on workflow_dispatch)
+- **Runtime**: Node.js 24 (pinned exactly in `mise.toml`; CI also runs 22 and 26)
+- **Toolchain manager**: mise — `mise.toml` pins node, pnpm and lefthook; `mise run <task>` mirrors the pnpm scripts and `mise run ci` runs the whole CI job locally
+- **Package Manager**: pnpm 11 (`pnpm-workspace.yaml` approves the build scripts pnpm 11 would otherwise reject)
+- **Language**: TypeScript 6 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
+- **Bundler**: tsdown 0.22 (config: `tsdown.config.mts`); everything is bundled, so the published package has no runtime dependencies
+- **CLI parsing**: cac 7
+- **Linter/Formatter**: Biome 2.5 (double quotes, semicolons, 2-space indent, 100 line width)
+- **Test**: Vitest 4 + `@vitest/coverage-v8` (the two must stay on identical versions)
+- **Git hooks**: lefthook, installed by the `prepare` script on `pnpm install`
+- **Release**: release-it 21 from `.github/workflows/release.yml`, publishing with npm Trusted Publishing (OIDC)
+- **CI/CD**: GitHub Actions — see "CI and releases"
 
 ## Project Structure
 
@@ -26,9 +29,12 @@ src/
 dist/                   # Build output (cli.cjs)
 .github/
   workflows/
-    ci.yml              # PR/push checks: lint, typecheck, test, build
-    release.yml         # Release on workflow_dispatch: build, test, release-it
-  dependabot.yml        # Weekly updates for npm and github-actions
+    ci.yml                        # push/PR: lint, typecheck, test with coverage, build (Node 22/24/26)
+    release.yml                   # workflow_dispatch: publish to npm, push the version tag
+    dependabot-auto-release.yml   # after CI on a dependabot PR: merge minor/patch, dispatch release.yml
+  dependabot.yml                  # weekly, grouped minor+patch, for npm and github-actions
+mise.toml               # tool pins + tasks
+lefthook.yml            # pre-commit: format; pre-push: lint, typecheck, test, build
 ```
 
 ## Key Commands
@@ -39,9 +45,12 @@ pnpm test           # Run tests with vitest
 pnpm test:coverage  # Run tests with coverage thresholds enforced
 pnpm lint           # Lint with biome
 pnpm format         # Format with biome
+pnpm typecheck      # tsc --noEmit
 pnpm dev            # Run source directly with tsx
-pnpm release        # Release with release-it (interactive)
+mise run ci         # The full CI job locally, with CI=true (tools escalate warnings in CI)
 ```
+
+Do not run `pnpm release` locally: releases happen only in CI (see below).
 
 ## Code Conventions
 
@@ -53,6 +62,31 @@ pnpm release        # Release with release-it (interactive)
 ## Git Conventions
 
 - Do NOT add `Co-Authored-By` lines to commit messages
+- `main` is protected (pull requests required). The maintainer pushes directly as an admin; GitHub
+  Actions cannot, which is why releases never push a commit (see below)
+- lefthook runs `pnpm format` on pre-commit and lint/typecheck/test/build on pre-push. CI and the
+  release job set `LEFTHOOK=0`
+
+## CI and releases
+
+- **CI** (`ci.yml`) runs on every push to `main` and every pull request: `pnpm lint`,
+  `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, on Node 22, 24 and 26. `mise run ci` runs the
+  same sequence locally with `CI=true`; that flag matters because some tools (tsdown, for one) treat
+  warnings as errors only in CI.
+- **Releases** are made only by `release.yml` (workflow_dispatch). npm Trusted Publishing is
+  registered for that workflow file, so publishing from anywhere else is rejected. There is no
+  NPM_TOKEN. release-it runs with `npm.skipChecks` because its `npm whoami` pre-flight cannot work
+  under OIDC.
+- **npm is the source of truth for the version.** GITHUB_TOKEN cannot push to the protected `main`,
+  so the version bump is never committed. The workflow reads the latest version from npm, adds one
+  patch (or takes the `version` input for a minor/major bump), and runs `release-it --ci <version>`,
+  which rewrites `package.json`, builds, publishes, tags `v<version>` and pushes only the tag. The
+  `version` field on `main` is informational and lags npm.
+- **Dependabot**: minor and patch updates arrive weekly as one grouped PR per ecosystem.
+  `dependabot-auto-release.yml` merges such a PR once CI is green and dispatches a release, so the
+  package gets a new patch version with no human involved. Major bumps stay open for review.
+- `release.yml` declares `concurrency: release`, so two dispatches queue instead of racing for the
+  same version.
 
 ## Architecture Notes
 
