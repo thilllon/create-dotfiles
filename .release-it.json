@@ -4,10 +4,14 @@
     "tagName": "v${version}"
   },
   "npm": {
-    "publish": true
+    "publish": true,
+    "skipChecks": true
   },
   "hooks": {
-    "before:init": ["pnpm lint", "pnpm test"],
+    "before:init": [
+      "pnpm lint",
+      "pnpm test"
+    ],
     "after:bump": "pnpm build"
   }
 }
