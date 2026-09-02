@@ -25,6 +25,11 @@ describe("parseFormats", () => {
     expect(() => parseFormats("folder,rar")).toThrow(/"rar"/);
   });
 
+  it("reports a value that is neither text nor a list as unknown instead of crashing", () => {
+    expect(() => parseFormats(0 as never)).toThrow(DotfileError);
+    expect(() => parseFormats(0 as never)).toThrow('Unknown output format "0"');
+  });
+
   it("rejects an empty selection", () => {
     expect(() => parseFormats("")).toThrow(DotfileError);
     expect(() => parseFormats([" , "])).toThrow(/At least one output format/);

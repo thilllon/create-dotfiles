@@ -217,6 +217,20 @@ describe("cli", () => {
       expect(stdout).toContain("Per group: core 3, custom 0, secrets 0, config-all 1");
     });
 
+    it.each([
+      [["--format", ""], "Error: At least one output format is required (folder, zip or tar)"],
+      [["--format"], "Error: option `--format <list>` value is missing"],
+      [["--bogus"], "Error: Unknown option `--bogus`"],
+    ])("rejects %j with a plain error, no stack trace, and collects nothing", (args, message) => {
+      const { status, output } = runCli("--auto", ...args);
+
+      expect(status).toBe(1);
+      expect(output).toContain(message);
+      expect(output).not.toContain("    at ");
+      expect(output).not.toContain("CACError");
+      expect(collections()).toEqual([]);
+    });
+
     it("rejects an unknown --format value without a stack trace", () => {
       const { status, output } = runCli("--auto", "--format", "rar");
 

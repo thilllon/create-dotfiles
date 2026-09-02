@@ -21,7 +21,8 @@ interface CollectFlags {
   auto?: boolean;
   includeEnv?: boolean;
   includeConfig?: boolean;
-  format?: string | string[];
+  /** cac yields `0` for `--format ""` (and `true` for a bare `--format`), not a string. */
+  format?: string | string[] | number | boolean;
   out?: string;
   maxFileSize?: number | string;
   dryRun?: boolean;
@@ -47,12 +48,17 @@ function run<A extends unknown[]>(action: (...args: A) => void | Promise<void>) 
   };
 }
 
+/** A `--format` value that is not text means no format was given; parseFormats says so. */
+function formatFlag(value: NonNullable<CollectFlags["format"]>): string | string[] {
+  return typeof value === "string" || Array.isArray(value) ? value : "";
+}
+
 /** Flags that were not given stay undefined so the config file's `[settings]` can fill them. */
 function toOptions(flags: CollectFlags): CollectOptions {
   return {
     includeEnv: flags.includeEnv,
     includeConfig: flags.includeConfig,
-    formats: flags.format === undefined ? undefined : parseFormats(flags.format),
+    formats: flags.format === undefined ? undefined : parseFormats(formatFlag(flags.format)),
     outDir: flags.out === undefined ? undefined : resolve(flags.out),
     maxFileSizeMb: flags.maxFileSize === undefined ? undefined : Number(flags.maxFileSize),
     dryRun: flags.dryRun,
@@ -141,5 +147,13 @@ if (cli.matchedCommand?.name === "" && command !== undefined) {
   cli.outputHelp();
   process.exitCode = 1;
 } else {
-  cli.runMatchedCommand();
+  try {
+    cli.runMatchedCommand();
+  } catch (err) {
+    // cac rejects unknown flags and missing option values before the action runs. Those are
+    // user errors like any DotfileError: a message and exit 1, not a stack trace.
+    if ((err as Error).name !== "CACError") throw err;
+    console.error(`Error: ${(err as Error).message}`);
+    process.exitCode = 1;
+  }
 }

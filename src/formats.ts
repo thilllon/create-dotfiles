@@ -17,7 +17,9 @@ const FORMAT_ALIASES: Readonly<Record<string, OutputFormat>> = {
  * list of formats. `tar.gz` and `tgz` are accepted as spellings of `tar`.
  */
 export function parseFormats(input: string | readonly string[]): OutputFormat[] {
-  const items = typeof input === "string" ? [input] : input;
+  // Anything that is not a list is treated as one value; a caller ignoring the types (or cac
+  // handing over a number) gets "Unknown output format", not a TypeError.
+  const items = Array.isArray(input) ? input : [input];
   const formats: OutputFormat[] = [];
 
   for (const item of items.flatMap((value) => String(value).split(","))) {
