@@ -119,7 +119,7 @@ Files that already exist are reported as `[SKIP] <path> exists (use --force)`. R
 - Terminal and tools: `.tmux.conf` `.config/tmux` `.config/starship.toml` `.config/alacritty` `.config/kitty` `.config/wezterm` `.config/ghostty` `.config/fish` `.config/mise` `.tool-versions` `.editorconfig` `.config/gh/config.yml` `.config/htop` `.config/bat` `.config/lazygit` `.config/zellij` `.hammerspoon` `.config/karabiner` `.skhdrc` `.yabairc` `.Brewfile` `Brewfile`
 - Non-secret parts of secret-adjacent tools: `.ssh/config` `.gnupg/gpg.conf` `.gnupg/gpg-agent.conf` `.aws/config`
 
-**Secrets (`--include-env`)** — `.npmrc` `.yarnrc` `.netrc` `.aws/credentials` `.docker/config.json`, and every `.env` / `.env.*` found by a scan of your home directory that goes at most four levels deep, never enters the never-copied directories, and does not follow symlinked directories.
+**Secrets (`--include-env`)** — `.npmrc` `.yarnrc` `.netrc` `.aws/credentials` `.docker/config.json`, and every `.env` / `.env.*` found by a scan of your home directory that goes at most four levels deep, never enters the never-copied directories, does not follow symlinked directories, and skips the top-level `Library`, `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures` and `Public` folders — so macOS never asks for folder access. (Core targets under `~/Library`, such as VS Code settings, are unaffected.)
 
 **Everything under `~/.config` (`--include-config`)** — after the never-copied rules and the size cap.
 

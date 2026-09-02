@@ -123,7 +123,10 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   previous collections (`dotfiles-YYYYMMDD-HHMMSS` with or without `.zip`/`.tar.gz`), and files over
   the size cap. Rules live in `targets.ts`.
 - **`.env` scan** is bounded: depth 4 from the home directory, never entering hard-excluded
-  directories, never following symlinked directories.
+  directories, never following symlinked directories, and skipping the top-level macOS user
+  folders (`ENV_SCAN_SKIPPED_FOLDERS`: Library, Desktop, Documents, Downloads, Movies, Music,
+  Pictures, Public) so it never triggers TCC "would like to access" prompts. Core targets under
+  `~/Library` and `--include-config` are unaffected by that skip.
 - **Symlinks are followed at every level** when copying (`walk.ts`), with loop detection, so a
   stow-style setup is captured as real files and the archive is self-contained.
 - **Outputs**: files are always staged into the timestamped folder; zip and tar.gz are written from
