@@ -1,0 +1,81 @@
+name: Dependabot auto-release
+
+# Closes the loop: dependabot PR -> CI green -> squash merge -> npm publish.
+#
+# Why `workflow_run` rather than `pull_request`: on pull_request events opened by
+# dependabot, GITHUB_TOKEN is read-only, so a job there could not merge. A workflow_run
+# job runs in the default branch's context with the permissions declared below.
+#
+# Why dispatch release.yml instead of publishing here: npm Trusted Publishing is
+# registered for the release.yml workflow file; OIDC tokens minted by any other
+# workflow are rejected. workflow_dispatch is one of the two event types that
+# GITHUB_TOKEN is allowed to trigger, so no PAT is needed.
+#
+# Loop safety: release-it pushes its version commit and tag with GITHUB_TOKEN, which
+# does not trigger CI, so a release can never re-enter this workflow.
+#
+# Only minor and patch updates are merged automatically. A major bump can change
+# behaviour (cac 6 -> 7 would) and is left open for a human.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  auto-release:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Find the open pull request for this branch
+        id: pr
+        run: |
+          NUMBER=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$HEAD_BRANCH" \
+            --state open --json number --jq '.[0].number // empty')
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+          if [ -n "$NUMBER" ]; then echo "PR #$NUMBER"; else echo "No open PR for $HEAD_BRANCH; nothing to do."; fi
+
+      - name: Decide whether this update may merge unattended
+        if: steps.pr.outputs.number != ''
+        id: decide
+        env:
+          NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          TITLE=$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json title --jq .title)
+          echo "title: $TITLE"
+          # Grouped PRs are minor+patch by construction (see .github/dependabot.yml).
+          if echo "$TITLE" | grep -qE 'the (npm|actions)-minor-patch group'; then
+            echo "merge=true" >> "$GITHUB_OUTPUT"; echo "grouped minor/patch -> merge"; exit 0
+          fi
+          # Single-dependency PR: "bump X from A.B.C to D.E.F". Merge only if the major is unchanged.
+          if [[ "$TITLE" =~ from\ v?([0-9]+)[0-9.]*\ to\ v?([0-9]+) ]]; then
+            if [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]; then
+              echo "merge=true" >> "$GITHUB_OUTPUT"; echo "same major -> merge"
+            else
+              echo "merge=false" >> "$GITHUB_OUTPUT"; echo "major bump ${BASH_REMATCH[1]} -> ${BASH_REMATCH[2]}: left for review"
+            fi
+            exit 0
+          fi
+          echo "merge=false" >> "$GITHUB_OUTPUT"; echo "unrecognised title shape: left for review"
+
+      - name: Squash-merge the pull request
+        if: steps.decide.outputs.merge == 'true'
+        env:
+          NUMBER: ${{ steps.pr.outputs.number }}
+        run: gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch
+
+      - name: Publish a release from main
+        if: steps.decide.outputs.merge == 'true'
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main

@@ -4,8 +4,22 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Minor and patch bumps arrive as one grouped PR, which dependabot-auto-release.yml
+    # merges and publishes automatically. Majors come as individual PRs and wait for a human.
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch

@@ -3,6 +3,13 @@ name: Release
 on:
   workflow_dispatch:
 
+# Queue concurrent releases instead of running them in parallel. Two runs started from
+# the same main would both bump to the same version; the second would then fail at
+# npm publish. This matters once dependabot-auto-release.yml dispatches releases.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ['ubuntu-latest']
