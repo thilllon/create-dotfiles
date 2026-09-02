@@ -1,3 +1,6 @@
+# Installed into .git/hooks by the `prepare` script on `pnpm install`.
+# Hooks are disabled in CI and in the release job via LEFTHOOK=0.
+
 pre-commit:
   parallel: true
   commands:
@@ -8,9 +11,11 @@ pre-commit:
 pre-push:
   parallel: true
   commands:
+    lint:
+      run: pnpm lint
     typecheck:
       run: pnpm typecheck
-    build:
-      run: pnpm build
     test:
       run: pnpm test
+    build:
+      run: pnpm build

@@ -13,6 +13,10 @@ concurrency:
 jobs:
   release:
     runs-on: ['ubuntu-latest']
+    env:
+      # release-it commits and pushes; without this the pre-commit hook would reformat
+      # mid-release and pre-push would rerun the whole test suite.
+      LEFTHOOK: 0
     permissions:
       contents: write
       # Required for npm Trusted Publishing (OIDC): npm exchanges this short-lived
@@ -21,16 +25,16 @@ jobs:
       # trusted publisher, otherwise `npm publish` is rejected.
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: true
-      # Trusted Publishing needs npm >= 11.5.1; the npm bundled with the pinned Node
-      # already satisfies that. Printed so a publish failure is easy to diagnose.
-      # Do not add `npm install -g npm@latest` here: npm 12 requires a newer Node than
-      # mise.toml pins, so it fails with EBADENGINE.
+      # Trusted Publishing needs npm >= 11.5.1; the npm bundled with the Node pinned in
+      # mise.toml satisfies that. Printed so a publish failure is easy to diagnose.
+      # There is no reason to upgrade npm here; an earlier `npm install -g npm@latest`
+      # step broke the release on an engines mismatch.
       - run: npm --version
       - run: pnpm install --frozen-lockfile
       # release-it commits the version bump and tags it; the runner has no git identity

@@ -1,4 +1,7 @@
-# esbuild (a transitive build dependency) runs a postinstall script to fetch its platform
-# binary. pnpm >= 11 exits non-zero on unapproved build scripts, so approve it explicitly.
+# pnpm >= 11 exits non-zero on unapproved build scripts, so every dependency that
+# runs one is approved here explicitly.
 allowBuilds:
-  esbuild: true
+  esbuild: true # transitive build dependency; postinstall fetches its platform binary
+  lefthook: true # postinstall links the prebuilt binary from its platform package
+minimumReleaseAgeExclude:
+  - '@types/node@26.4.1'

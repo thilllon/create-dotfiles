@@ -1,4 +1,46 @@
+# Toolchain source of truth. CI installs exactly these via jdx/mise-action; run
+# `mise install` locally to match. Tasks below run with `mise run <task>`.
+
 [tools]
-node = "24.13.1"
-pnpm = "11"
-lefthook = "latest"
+# Keep the bundled npm >= 11.5.1: npm Trusted Publishing needs it (24.20.0 bundles
+# 11.19.0; 24.0.0-24.4.1 bundle < 11.5.1 and must not be used).
+node = "24.20.0"
+pnpm = "11.25.0"
+# Also a devDependency: the `prepare` script needs it on `pnpm install` regardless of
+# mise. This pin is for running lefthook directly from a shell.
+lefthook = "2.1.12"
+
+[tasks.install]
+description = "Install dependencies exactly as CI does"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.lint]
+description = "Biome check (no writes)"
+run = "pnpm lint"
+
+[tasks.format]
+description = "Biome check --write"
+run = "pnpm format"
+
+[tasks.typecheck]
+description = "tsc --noEmit"
+run = "pnpm typecheck"
+
+[tasks.test]
+description = "Vitest"
+run = "pnpm test"
+
+[tasks.build]
+description = "tsdown -> dist/cli.cjs"
+run = "pnpm build"
+
+[tasks.ci]
+description = "The full CI job, locally, with CI=true so tools escalate warnings the way they do on GitHub"
+env = { CI = "true" }
+run = [
+  "pnpm install --frozen-lockfile",
+  "pnpm lint",
+  "pnpm typecheck",
+  "pnpm test:coverage",
+  "pnpm build",
+]
