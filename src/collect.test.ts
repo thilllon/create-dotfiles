@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -18,6 +19,7 @@ import {
   countByGroup,
   writePlan,
 } from "./collect";
+import { parseConfig } from "./config";
 import { DotfileError } from "./errors";
 import { resolveTargets } from "./plan";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
@@ -41,6 +43,13 @@ async function tarFileEntries(file: string): Promise<string[]> {
 
 function zipEntries(file: string): string[] {
   return Object.keys(unzipSync(readFileSync(file))).sort();
+}
+
+/** Sorted `/`-separated paths of the regular files under `dir`, relative to it. */
+function filesUnder(dir: string): string[] {
+  return (readdirSync(dir, { recursive: true }) as string[])
+    .filter((rel) => statSync(join(dir, rel)).isFile())
+    .sort();
 }
 
 describe("collect", () => {
@@ -102,6 +111,47 @@ describe("collect", () => {
     expect(zipEntries(zipPath)).toEqual(expected);
     const all = (await tarEntries(tarPath)).map((entry) => entry.path);
     expect(all.filter((path) => !path.startsWith(`${FIXED_NAME}/`))).toEqual([]);
+  });
+
+  it.each([
+    ["~", (h: string) => h],
+    ["backups/deep/er", (h: string) => join(h, "backups/deep/er")],
+  ])(
+    "with out=%s the zip and tar hold exactly the folder's files, under relative names",
+    async (outDir, expectedDir) => {
+      const dir = expectedDir(home);
+
+      const summary = await run({ outDir, formats: ["folder", "zip", "tar"] });
+
+      const folder = join(dir, FIXED_NAME);
+      const zipPath = join(dir, `${FIXED_NAME}.zip`);
+      const tarPath = join(dir, `${FIXED_NAME}.tar.gz`);
+      expect(summary.outDir).toBe(dir);
+      expect(summary.written).toEqual([folder, zipPath, tarPath]);
+      const staged = filesUnder(folder);
+      expect(staged).toEqual([".config/nvim/lua/init.lua", ".zshrc"]);
+      const expected = staged.map((rel) => `${FIXED_NAME}/${rel}`);
+      expect(zipEntries(zipPath)).toEqual(expected);
+      expect(await tarFileEntries(tarPath)).toEqual(expected);
+      const every = [...zipEntries(zipPath), ...(await tarEntries(tarPath)).map((e) => e.path)];
+      expect(every.filter((name) => name.startsWith("/") || name.includes(".."))).toEqual([]);
+    }
+  );
+
+  it("keeps spaces and non-ASCII characters in paths through folder, zip and tar", async () => {
+    const rel = "spaces dir/ünï cödé.txt";
+    createFile(home, rel, "ü");
+    const config = parseConfig(`[files]\ninclude = ["${rel}"]`, home);
+
+    const summary = await run({ config, formats: ["folder", "zip", "tar"] });
+
+    expect(summary.copied.map((f) => f.path)).toContain(rel);
+    expect(readFileSync(join(out, FIXED_NAME, rel), "utf8")).toBe("ü");
+    const entries = unzipSync(readFileSync(join(out, `${FIXED_NAME}.zip`)));
+    expect(strFromU8(entries[`${FIXED_NAME}/${rel}`])).toBe("ü");
+    expect(await tarFileEntries(join(out, `${FIXED_NAME}.tar.gz`))).toContain(
+      `${FIXED_NAME}/${rel}`
+    );
   });
 
   it("removes the staging folder when folder is not among the formats", async () => {
@@ -245,6 +295,22 @@ describe("collect", () => {
     await expect(writePlan(plan, { onProgress })).rejects.toThrow(/ENOENT.*\.zshrc/);
 
     expect(existsSync(join(out, `${FIXED_NAME}.zip`))).toBe(false);
+    expect(existsSync(plan.stagingDir)).toBe(false);
+  });
+
+  it("removes the partial zip even when the failure lands before the file has been opened", async () => {
+    const plan = resolveTargets({ homeDir: home, outDir: out, now: FIXED_DATE, formats: ["zip"] });
+    // yazl rejects a `..` segment in an entry name synchronously, so the rejection arrives while
+    // createWriteStream's open is still pending. The teardown must wait for the stream to close
+    // before unlinking, or the pending open re-creates an empty archive after the unlink.
+    plan.files[0] = { ...plan.files[0], path: `.config/../${plan.files[0].path}` };
+    const zipPath = join(out, `${FIXED_NAME}.zip`);
+
+    await expect(writePlan(plan)).rejects.toThrow(/invalid relative path/);
+
+    expect(existsSync(zipPath)).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(existsSync(zipPath)).toBe(false);
     expect(existsSync(plan.stagingDir)).toBe(false);
   });
 

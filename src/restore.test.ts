@@ -86,6 +86,21 @@ describe("restore", () => {
     expect(summary.restored).toContain(".zshrc");
   });
 
+  it("with force overwrites inside an existing nested directory and deletes nothing else", () => {
+    createFile(home, ".config/nvim/lua/init.lua", "mine");
+    createFile(home, ".config/nvim/lua/other.lua", "keep");
+    createFile(home, ".config/nvim/plugin/x.lua", "keep too");
+
+    const summary = restore({ homeDir: home, force: true });
+
+    expect(readFileSync(join(home, ".config/nvim/lua/init.lua"), "utf8")).toBe("-- vim");
+    expect(readFileSync(join(home, ".config/nvim/lua/other.lua"), "utf8")).toBe("keep");
+    expect(readFileSync(join(home, ".config/nvim/plugin/x.lua"), "utf8")).toBe("keep too");
+    expect(summary.restored.sort()).toEqual([".config/nvim/lua/init.lua", ".zshrc"]);
+    expect(summary.skipped).toEqual([]);
+    expect(summary.failed).toEqual([]);
+  });
+
   it("restores from an explicit absolute source", () => {
     const summary = restore({ homeDir: home, source: join(home, older) });
 

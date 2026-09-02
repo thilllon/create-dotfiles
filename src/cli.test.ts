@@ -226,12 +226,21 @@ describe("cli", () => {
       expect(collections()).toEqual([]);
     });
 
-    it("rejects an invalid --max-file-size", () => {
-      const { status, output } = runCli("--auto", "--max-file-size", "lots");
+    it.each([
+      [["--max-file-size", "0"], '"0"'],
+      [["--max-file-size=-1"], '"-1"'],
+      [["--max-file-size", "lots"], '"NaN"'],
+    ])(
+      "rejects %j as --max-file-size without a stack trace and collects nothing",
+      (args, shown) => {
+        const { status, output } = runCli("--auto", ...args);
 
-      expect(status).toBe(1);
-      expect(output).toContain("Error: Invalid max file size");
-    });
+        expect(status).toBe(1);
+        expect(output).toContain(`Error: Invalid max file size ${shown}`);
+        expect(output).not.toContain("    at ");
+        expect(collections()).toEqual([]);
+      }
+    );
 
     it("reads [settings] from ~/.dotfilesrc.toml and lets flags override them", () => {
       writeFileSync(join(tempHome, ".dotfilesrc.toml"), '[settings]\nformats = ["zip"]\n');

@@ -184,6 +184,48 @@ describe("resolveTargets", () => {
       expect(paths(p).sort()).toEqual([".gnupg/gpg-agent.conf", ".gnupg/gpg.conf"]);
     });
 
+    it("reports an include naming a private key instead of copying it, and keeps the .pub", () => {
+      createFile(home, ".ssh/id_ed25519", "PRIVATE");
+      createFile(home, ".ssh/id_ed25519.pub", "PUBLIC");
+
+      const p = plan({
+        config: config('[files]\ninclude = [".ssh/id_ed25519", ".ssh/id_ed25519.pub"]'),
+      });
+
+      expect(p.files).toEqual([
+        {
+          path: ".ssh/id_ed25519.pub",
+          size: 6,
+          group: "custom",
+          target: ".ssh/id_ed25519.pub",
+        },
+      ]);
+      expect(p.failed).toEqual([
+        {
+          path: ".ssh/id_ed25519",
+          group: "custom",
+          error: "excluded: matches a never-copied rule",
+        },
+      ]);
+      expect(p.found.map((f) => f.path)).toEqual([".ssh/id_ed25519.pub"]);
+      expect(p.missing.map((m) => m.path)).not.toContain(".ssh/id_ed25519");
+    });
+
+    it("never picks up a previous collection or its archives, in the .env scan or under ~/.config", () => {
+      createFile(home, "dotfiles-20260101-000000/.env", "OLD=1");
+      createFile(home, "dotfiles-20260101-000000/.zshrc", "old");
+      createFile(home, ".config/dotfiles-20260101-000000/tool.toml", "old");
+      createFile(home, ".config/dotfiles-20260101-000000.zip", "zip");
+      createFile(home, ".config/dotfiles-20260101-000000.tar.gz", "tgz");
+      createFile(home, ".config/dotfiles-notes/keep.md", "keep");
+
+      const p = plan({ includeEnv: true, includeConfig: true });
+
+      expect(paths(p).filter((path) => path.includes("dotfiles-2026"))).toEqual([]);
+      expect(paths(p)).toContain(".config/dotfiles-notes/keep.md");
+      expect(p.failed).toEqual([]);
+    });
+
     it("reports an include entry that hits a never-copied rule instead of ignoring it", () => {
       createFile(home, "dotfiles-20260101-000000/.zshrc");
 
@@ -475,6 +517,34 @@ describe("resolveTargets", () => {
           path: ".config/nvim/self",
           group: "core",
           error: "symlink loop detected at .config/nvim/self",
+        },
+      ]);
+    });
+
+    it("does not mistake two sibling symlinks to the same directory for a loop", () => {
+      createFile(home, "shared/common.lua", "-- shared");
+      mkdirSync(join(home, ".config/nvim"), { recursive: true });
+      symlinkSync(join(home, "shared"), join(home, ".config/nvim/a"));
+      symlinkSync(join(home, "shared"), join(home, ".config/nvim/b"));
+
+      const p = plan();
+
+      expect(paths(p)).toEqual([".config/nvim/a/common.lua", ".config/nvim/b/common.lua"]);
+      expect(p.failed).toEqual([]);
+    });
+
+    it("detects a symlink pointing at an ancestor of the directory being walked", () => {
+      createFile(home, ".config/nvim/lua/init.lua");
+      symlinkSync(join(home, ".config/nvim"), join(home, ".config/nvim/lua/up"));
+
+      const p = plan();
+
+      expect(paths(p)).toEqual([".config/nvim/lua/init.lua"]);
+      expect(p.failed).toEqual([
+        {
+          path: ".config/nvim/lua/up",
+          group: "core",
+          error: "symlink loop detected at .config/nvim/lua/up",
         },
       ]);
     });
