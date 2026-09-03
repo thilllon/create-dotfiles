@@ -1,6 +1,6 @@
 {
   "name": "create-dotfiles",
-  "version": "2.0.1",
+  "version": "2.1.1",
   "description": "Sync dotfiles between your home directory and a backup folder",
   "license": "MIT",
   "repository": {
