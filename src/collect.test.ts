@@ -23,7 +23,14 @@ import { parseConfig } from "./config";
 import { DotfileError } from "./errors";
 import { toPosixPath } from "./paths";
 import { resolveTargets } from "./plan";
-import { canSymlink, createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
+import {
+  canSymlink,
+  createFile,
+  FIXED_DATE,
+  FIXED_NAME,
+  makeTempDir,
+  TEST_PLATFORM,
+} from "./test-helpers";
 
 async function tarEntries(file: string): Promise<{ path: string; type: string }[]> {
   const entries: { path: string; type: string }[] = [];
@@ -70,7 +77,7 @@ describe("collect", () => {
   });
 
   const run = (options: CollectOptions = {}) =>
-    collect({ homeDir: home, outDir: out, now: FIXED_DATE, ...options });
+    collect({ homeDir: home, outDir: out, now: FIXED_DATE, platform: TEST_PLATFORM, ...options });
 
   it("copies files to <out>/dotfiles-<ts>/<home-relative path>", async () => {
     const summary = await run();
@@ -286,7 +293,12 @@ describe("collect", () => {
   });
 
   it("records a copy failure and carries on with the remaining files", async () => {
-    const plan = resolveTargets({ homeDir: home, outDir: out, now: FIXED_DATE });
+    const plan = resolveTargets({
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+    });
     rmSync(join(home, ".zshrc"));
 
     const summary = await writePlan(plan);
@@ -324,7 +336,13 @@ describe("collect", () => {
   });
 
   it("reports a staged file that vanished before zipping as a rejection, not a crash", async () => {
-    const plan = resolveTargets({ homeDir: home, outDir: out, now: FIXED_DATE, formats: ["zip"] });
+    const plan = resolveTargets({
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      formats: ["zip"],
+    });
     const onProgress = ({ done, total }: CollectProgress) => {
       if (done === total) rmSync(join(plan.stagingDir, ".zshrc"));
     };
@@ -336,7 +354,13 @@ describe("collect", () => {
   });
 
   it("removes the partial zip even when the failure lands before the file has been opened", async () => {
-    const plan = resolveTargets({ homeDir: home, outDir: out, now: FIXED_DATE, formats: ["zip"] });
+    const plan = resolveTargets({
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      formats: ["zip"],
+    });
     // yazl rejects a `..` segment in an entry name synchronously, so the rejection arrives while
     // createWriteStream's open is still pending. The teardown must wait for the stream to close
     // before unlinking, or the pending open re-creates an empty archive after the unlink.
@@ -360,6 +384,7 @@ describe("collect", () => {
         homeDir: home,
         outDir: out,
         now: FIXED_DATE,
+        platform: TEST_PLATFORM,
         formats: ["zip"],
       });
       plan.outputs.zip = join(out, "missing-dir", "x.zip");

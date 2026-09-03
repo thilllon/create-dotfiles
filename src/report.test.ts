@@ -10,7 +10,7 @@ import {
   formatRestoreSummary,
   formatSummary,
 } from "./report";
-import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
+import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "./test-helpers";
 
 describe("formatBytes", () => {
   it.each([
@@ -49,6 +49,7 @@ describe("formatSummary", () => {
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
+      platform: TEST_PLATFORM,
       includeEnv: true,
       maxFileSizeMb: 1,
       formats: ["folder", "zip", "tar"],
@@ -75,6 +76,7 @@ describe("formatSummary", () => {
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
+      platform: TEST_PLATFORM,
       maxFileSizeMb: 1,
       includeEnv: false,
     });
@@ -93,7 +95,13 @@ describe("formatSummary", () => {
     const config = parseConfig('[files]\ninclude = ["dotfiles-20260101-000000"]', home);
     createFile(home, "dotfiles-20260101-000000/x", "x");
 
-    const summary = await collect({ homeDir: home, outDir: out, now: FIXED_DATE, config });
+    const summary = await collect({
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      config,
+    });
 
     expect(formatSummary(summary)).toContain(
       "Failed (1):\n  dotfiles-20260101-000000: excluded: matches a never-copied rule"

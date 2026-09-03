@@ -12,7 +12,7 @@ import {
   type Prompter,
   runInteractive,
 } from "./interactive";
-import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
+import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "./test-helpers";
 
 interface Script {
   confirm?: (boolean | Cancelled)[];
@@ -100,7 +100,13 @@ describe("runInteractive", () => {
   });
 
   const run = (prompter: Prompter, options: InteractiveOptions = {}) =>
-    runInteractive(prompter, { homeDir: home, outDir: out, now: FIXED_DATE, ...options });
+    runInteractive(prompter, {
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      ...options,
+    });
 
   const accept = (script: Script = {}) =>
     new FakePrompter({
@@ -325,7 +331,7 @@ describe("runInteractive", () => {
     const empty = makeTempDir();
     const prompter = accept();
     try {
-      await runInteractive(prompter, { homeDir: empty, now: FIXED_DATE });
+      await runInteractive(prompter, { homeDir: empty, now: FIXED_DATE, platform: TEST_PLATFORM });
 
       expect(prompter.notes[0].message).toMatch(/No dotfiles .* found/);
       expect(prompter.confirms[0].message).toContain(".env files found by scan: 0");

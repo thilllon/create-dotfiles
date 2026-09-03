@@ -2,7 +2,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveTargets, scanEnvFiles } from "./plan";
-import { createFile, FIXED_DATE, makeTempDir } from "./test-helpers";
+import { createFile, FIXED_DATE, makeTempDir, TEST_PLATFORM } from "./test-helpers";
 import type { WalkedFile } from "./walk";
 
 /**
@@ -86,7 +86,12 @@ describe("filesystem errors during the scan and the walk", () => {
   });
 
   it("resolveTargets completes with the failures in the plan, not an exception", () => {
-    const plan = resolveTargets({ homeDir: home, now: FIXED_DATE, includeEnv: true });
+    const plan = resolveTargets({
+      homeDir: home,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      includeEnv: true,
+    });
 
     expect(plan.files.map((f) => f.path)).toEqual([
       "busy/.env.local",
@@ -121,6 +126,7 @@ describe("filesystem errors during the scan and the walk", () => {
     const plan = resolveTargets({
       homeDir: home,
       now: FIXED_DATE,
+      platform: TEST_PLATFORM,
       includeEnv: false,
       includeConfig: true,
     });

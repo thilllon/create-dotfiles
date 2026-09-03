@@ -48,6 +48,9 @@ describe("cli", () => {
 
   const collections = () => readdirSync(tempHome).filter((name) => COLLECTION.test(name));
 
+  // The child plans for the host platform (there is deliberately no hook to pin it), so every
+  // fixture below is a common target and every count holds on macOS, Linux and Windows alike.
+
   describe("--help / --version", () => {
     it("prints usage covering both commands, the flags and the never-copied rules", () => {
       const { status, stdout } = runCli("--help");

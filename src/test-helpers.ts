@@ -1,11 +1,21 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-/** A fresh temporary directory to stand in for the home directory. */
+/**
+ * A fresh temporary directory to stand in for the home directory. The temp root is resolved
+ * first: on macOS `os.tmpdir()` is `/var/folders/...`, a symlink to `/private/var/...`, and a
+ * path that has been through `realpath` would otherwise never equal one built from `tmpdir()`.
+ */
 export function makeTempDir(prefix = "dotfiles-test-"): string {
-  return mkdtempSync(join(tmpdir(), prefix));
+  return mkdtempSync(join(realpathSync(tmpdir()), prefix));
 }
+
+/**
+ * Every test that plans or collects pins the platform, so the suite asserts the same targets
+ * on every host; the dedicated platform tests pass `darwin` / `win32` explicitly.
+ */
+export const TEST_PLATFORM = "linux";
 
 /** Writes a file under `root`, creating parent directories; returns the absolute path. */
 export function createFile(

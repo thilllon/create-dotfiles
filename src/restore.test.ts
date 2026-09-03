@@ -172,9 +172,9 @@ describe("restore", () => {
 
     const summary = restore({ homeDir: home, force: true });
 
-    // EISDIR on Linux; macOS and Windows report EPERM or EACCES for the same copy.
+    // EISDIR on Linux; macOS and Windows may report EPERM, EACCES or EEXIST for the same copy.
     expect(summary.failed).toEqual([
-      { path: ".zshrc", error: expect.stringMatching(/EISDIR|EPERM|EACCES/) },
+      { path: ".zshrc", error: expect.stringMatching(/EISDIR|EPERM|EACCES|EEXIST/) },
     ]);
     expect(summary.restored).toEqual([".config/nvim/lua/init.lua"]);
     expect(summary.skipped).toEqual([]);

@@ -1,5 +1,6 @@
-import { lstatSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type DotfilesConfig, parseConfig } from "./config";
@@ -22,6 +23,7 @@ import {
   IS_WINDOWS,
   makeTempDir,
   symlinkDir,
+  TEST_PLATFORM,
 } from "./test-helpers";
 
 describe("collectionName", () => {
@@ -46,7 +48,7 @@ describe("resolveTargets", () => {
   });
 
   const plan = (options: PlanOptions = {}): Plan =>
-    resolveTargets({ homeDir: home, now: FIXED_DATE, ...options });
+    resolveTargets({ homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM, ...options });
   const paths = (p: Plan) => p.files.map((f) => f.path);
   const config = (toml: string): DotfilesConfig => parseConfig(toml, home);
 
@@ -83,8 +85,10 @@ describe("resolveTargets", () => {
       });
 
       it("defaults to the platform this process runs on", () => {
-        expect(plan().platform).toBe(resolveTargetPlatform(process.platform));
-        expect(paths(plan())).toEqual(paths(plan({ platform: process.platform })));
+        const host = resolveTargets({ homeDir: home, now: FIXED_DATE });
+
+        expect(host.platform).toBe(resolveTargetPlatform(process.platform));
+        expect(paths(host)).toEqual(paths(plan({ platform: process.platform })));
       });
 
       it("darwin finds the Library editor files and macOS tools only", () => {
@@ -192,7 +196,7 @@ describe("resolveTargets", () => {
     });
 
     it("defaults to a folder in the home directory, secrets on, ~/.config off and a 10 MB cap", () => {
-      const p = resolveTargets({ homeDir: home });
+      const p = resolveTargets({ homeDir: home, platform: TEST_PLATFORM });
 
       expect(p.name).toMatch(/^dotfiles-\d{8}-\d{6}$/);
       expect(p.formats).toEqual(["folder"]);
@@ -671,23 +675,32 @@ describe("resolveTargets", () => {
       }
     );
 
-    // Windows has no filesystem sockets (`listen(path)` means a named pipe there).
-    it.skipIf(IS_WINDOWS)("reports a socket as failed instead of trying to read it", async () => {
-      createFile(home, ".config/nvim/init.lua");
-      const server = createServer();
-      await new Promise<void>((resolve) => server.listen(join(home, ".config/nvim/sock"), resolve));
+    // Windows has no filesystem sockets (`listen(path)` means a named pipe there). A socket
+    // path is limited to 104 bytes on macOS (108 on Linux), so this test gets its own short
+    // home directory and is skipped when even that would not fit.
+    const SOCKET_REL = ".config/nvim/sock";
+    const socketPathFits = join(realpathSync(tmpdir()), "s-XXXXXX", SOCKET_REL).length < 100;
+    it.skipIf(IS_WINDOWS || !socketPathFits)(
+      "reports a socket as failed instead of trying to read it",
+      async () => {
+        const shortHome = makeTempDir("s-");
+        createFile(shortHome, ".config/nvim/init.lua");
+        const server = createServer();
+        await new Promise<void>((resolve) => server.listen(join(shortHome, SOCKET_REL), resolve));
 
-      try {
-        const p = plan();
+        try {
+          const p = plan({ homeDir: shortHome });
 
-        expect(paths(p)).toEqual([".config/nvim/init.lua"]);
-        expect(p.failed).toEqual([
-          { path: ".config/nvim/sock", group: "core", error: "not a regular file" },
-        ]);
-      } finally {
-        await new Promise<void>((resolve) => server.close(() => resolve()));
+          expect(paths(p)).toEqual([".config/nvim/init.lua"]);
+          expect(p.failed).toEqual([
+            { path: SOCKET_REL, group: "core", error: "not a regular file" },
+          ]);
+        } finally {
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+          rmSync(shortHome, { recursive: true, force: true });
+        }
       }
-    });
+    );
   });
 
   describe("option precedence", () => {
@@ -773,6 +786,7 @@ describe("filterPlan", () => {
     const full = resolveTargets({
       homeDir: home,
       now: FIXED_DATE,
+      platform: TEST_PLATFORM,
       includeEnv: true,
       includeConfig: true,
     });
@@ -780,7 +794,12 @@ describe("filterPlan", () => {
     for (const includeEnv of [false, true]) {
       for (const includeConfig of [false, true]) {
         const options = { includeEnv, includeConfig, formats: ["zip", "tar"] as const };
-        const fresh = resolveTargets({ homeDir: home, now: FIXED_DATE, ...options });
+        const fresh = resolveTargets({
+          homeDir: home,
+          now: FIXED_DATE,
+          platform: TEST_PLATFORM,
+          ...options,
+        });
 
         expect(filterPlan(full, { ...options, now: FIXED_DATE })).toEqual(fresh);
       }
@@ -788,7 +807,7 @@ describe("filterPlan", () => {
   });
 
   it("recomputes the name and outputs for the new timestamp and formats", () => {
-    const full = resolveTargets({ homeDir: home, now: FIXED_DATE });
+    const full = resolveTargets({ homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM });
 
     const later = filterPlan(full, { formats: ["tar"], now: new Date(2027, 0, 1, 0, 0, 0) });
 
