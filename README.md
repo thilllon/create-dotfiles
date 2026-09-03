@@ -47,7 +47,7 @@ Copied 9 files (132 B) from /Users/you
 Per group: core 7, custom 0, secrets 2, config-all 0
 Skipped, larger than 10 MB (1):
   .hammerspoon/Spoons/blob.bin (20.0 MB)
-Not found (49): .zshenv, .zprofile, .bashrc, ...
+Not found (44): .zshenv, .zprofile, .bashrc, ...
 Written:
   folder: /Users/you/dotfiles-20260902-150719/
   zip:    /Users/you/dotfiles-20260902-150719.zip
@@ -62,7 +62,7 @@ home-relative path, so the folder is a faithful mirror and the archives restore 
 
 |                               |                                                                                                                                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **▸ Zero setup**              | No config file needed. Built-in targets cover shells, Git, Vim/Neovim, tmux, terminal emulators, Starship, fish, mise, VS Code and Cursor (macOS and Linux paths), and more.            |
+| **▸ Zero setup**              | No config file needed. Built-in targets cover shells, Git, Vim/Neovim, tmux, terminal emulators, Starship, fish, mise, VS Code and Cursor, and more — with the right paths on macOS, Linux and Windows. |
 | **▸ Interactive or scripted** | A terminal gets prompts; `--auto` gets defaults. Piped or in CI, it falls back to `--auto` on its own.                                                                                   |
 | **▸ Timestamped, faithful**   | `~/dotfiles-YYYYMMDD-HHMMSS/` mirrors home-relative paths. Get a folder, a zip, a tar.gz, or all three in one run.                                                                       |
 | **▸ Secrets in, keys out**    | `.env` files (found by a bounded scan), `.npmrc`, `.netrc`, `.aws/credentials`, `.docker/config.json` are included by default; `--no-include-env` leaves them out. SSH and GPG private keys are never copied, ever. |
@@ -111,15 +111,39 @@ Files that already exist are reported as `[SKIP] <path> exists (use --force)`. R
 
 ## What gets collected
 
-**Core (always)** — only the ones that exist on your machine:
+The built-in list is the common set plus the set for the OS you run on; targets from the other
+platforms are never attempted, so they do not show up under "Not found". Every path is relative
+to your home directory (`%USERPROFILE%` on Windows) and written with `/` in the summary and the
+archives on every OS. Only the entries that exist on your machine are copied.
+
+**Common (every OS)**
 
 - Shell: `.zshrc` `.zshenv` `.zprofile` `.bashrc` `.bash_profile` `.profile` `.inputrc`
 - Git: `.gitconfig` `.gitignore_global` `.gitattributes_global`
-- Editors: `.vimrc` `.ideavimrc` `.config/nvim`, VS Code and Cursor `settings.json` / `keybindings.json` / `snippets` (both `Library/Application Support/...` and `.config/...`)
-- Terminal and tools: `.tmux.conf` `.config/tmux` `.config/starship.toml` `.config/alacritty` `.config/kitty` `.config/wezterm` `.config/ghostty` `.config/fish` `.config/mise` `.tool-versions` `.editorconfig` `.config/gh/config.yml` `.config/htop` `.config/bat` `.config/lazygit` `.config/zellij` `.hammerspoon` `.config/karabiner` `.skhdrc` `.yabairc` `.Brewfile` `Brewfile`
+- Editors: `.vimrc` `.ideavimrc` `.config/nvim` `.editorconfig`
+- Terminal: `.tmux.conf` `.config/tmux` `.config/starship.toml` `.config/alacritty` `.config/kitty` `.config/wezterm` `.wezterm.lua` `.config/ghostty` `.config/fish` `.config/zellij`
+- Tools: `.config/mise` `.tool-versions` `.config/gh/config.yml` `.config/htop` `.config/bat` `.config/lazygit`
 - Non-secret parts of secret-adjacent tools: `.ssh/config` `.gnupg/gpg.conf` `.gnupg/gpg-agent.conf` `.aws/config`
 
-**Secrets (on by default; `--no-include-env` to skip)** — `.npmrc` `.yarnrc` `.netrc` `.aws/credentials` `.docker/config.json`, and every `.env` / `.env.*` found by a scan of your home directory that goes at most four levels deep, never enters the never-copied directories, does not follow symlinked directories, and skips the top-level `Library`, `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures` and `Public` folders — so macOS never asks for folder access. (Core targets under `~/Library`, such as VS Code settings, are unaffected.)
+**macOS**
+
+- VS Code and Cursor: `Library/Application Support/{Code,Cursor}/User/{settings.json,keybindings.json,snippets}`
+- `.hammerspoon` `.config/karabiner` `.skhdrc` `.yabairc` `.Brewfile` `Brewfile`
+
+**Linux**
+
+- VS Code, Code - OSS, VSCodium and Cursor: `.config/{Code,Code - OSS,VSCodium,Cursor}/User/{settings.json,keybindings.json,snippets}`
+- `.bash_logout` `.xinitrc` `.xprofile` `.Xresources` `.config/i3` `.config/sway` `.config/hypr` `.config/waybar` `.config/rofi` `.config/dunst` `.config/picom` `.config/polybar` `.config/gtk-3.0/settings.ini` `.config/fontconfig`
+
+**Windows** (relative to `%USERPROFILE%`)
+
+- VS Code and Cursor: `AppData/Roaming/{Code,Cursor}/User/{settings.json,keybindings.json,snippets}`
+- Neovim: `AppData/Local/nvim` (in addition to `.config/nvim`)
+- Windows Terminal: `AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json`
+- PowerShell: `Documents/PowerShell/Microsoft.PowerShell_profile.ps1` `Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`
+- `AppData/Roaming/alacritty` `.wslconfig`
+
+**Secrets (on by default; `--no-include-env` to skip)** — `.npmrc` `.yarnrc` `.netrc` `.aws/credentials` `.docker/config.json`, and every `.env` / `.env.*` found by a scan of your home directory that goes at most four levels deep, never enters the never-copied directories, does not follow symlinked directories (or junctions), and skips the top-level user folders: `Library`, `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures`, `Public` (macOS, so it never asks for folder access), `Videos`, `Templates`, `snap` (Linux) and `AppData`, `Application Data`, `Local Settings`, `OneDrive`, `Contacts`, `Favorites`, `Links`, `Saved Games`, `Searches`, `3D Objects` (Windows). Core targets inside those folders, such as VS Code settings under `~/Library` or `AppData`, are unaffected. An entry the scan cannot read (a locked file, a junction that refuses access) is reported under "Failed" and skipped; the run continues.
 
 **Everything under `~/.config` (`--include-config`)** — after the never-copied rules and the size cap.
 
@@ -150,7 +174,7 @@ include = [".config/foo", "work/scripts"]
 exclude = [".config/kitty", "Snapshots"]
 ```
 
-Explicit flags win over the file, which wins over the built-in defaults. Entries must be relative and stay inside your home directory; anything else is rejected with a clear error. An `include` that hits a never-copied rule is reported under "Failed" rather than silently dropped.
+Explicit flags win over the file, which wins over the built-in defaults. Entries must be relative and stay inside your home directory; anything else is rejected with a clear error. On Windows you can write them with backslashes (`AppData\Roaming\Code`); they are normalised to `/`. An `include` that hits a never-copied rule is reported under "Failed" rather than silently dropped.
 
 ## Use as a library
 
@@ -163,7 +187,7 @@ console.log(summary);
 restore({ force: false });
 ```
 
-`collect`, `resolveTargets` (the planning step behind `--dry-run`), `restore`, `runInteractive` (bring your own prompter), the option and summary types, and `DEFAULT_TARGETS` are all exported with declarations. Everything is bundled; the package has no runtime dependencies.
+`collect`, `resolveTargets` (the planning step behind `--dry-run`), `restore`, `runInteractive` (bring your own prompter), the option and summary types, `DEFAULT_TARGETS` (this OS) and `targetsFor(platform)` are all exported with declarations. Pass `platform: "win32"` (or `"darwin"`, `"linux"`) in the options to plan for another OS. Everything is bundled; the package has no runtime dependencies.
 
 ## Guarantees worth knowing
 

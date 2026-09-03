@@ -13,7 +13,7 @@ published as a typed library (`dist/index.cjs` + `dist/index.d.cts`).
 
 ## Tech Stack
 
-- **Runtime**: Node.js 24 (pinned exactly in `mise.toml`; CI also runs 22 and 26)
+- **Runtime**: Node.js 24 (pinned exactly in `mise.toml`; CI also runs 22 and 26 on Ubuntu, and 24 on Windows and macOS)
 - **Toolchain manager**: mise — `mise.toml` pins node, pnpm and lefthook; `mise run <task>` mirrors the pnpm scripts and `mise run ci` runs the whole CI job locally
 - **Package Manager**: pnpm 11 (`pnpm-workspace.yaml` approves the build scripts pnpm 11 would otherwise reject)
 - **Language**: TypeScript 6 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
@@ -33,7 +33,8 @@ src/
   index.ts             # public API; package.json main/types/exports point at its build
   collect.ts           # collect(): stage files, write folder/zip/tar, build the summary
   plan.ts              # resolveTargets(), filterPlan(), scanEnvFiles(), collectionName()
-  targets.ts           # DEFAULT_TARGETS, hard-exclude rules, private-key rules
+  targets.ts           # default targets (common + darwin/linux/win32), hard-exclude and private-key rules
+  paths.ts             # POSIX <-> native path helpers; archive entry names
   walk.ts              # filesystem walking: follows symlinks at every level, detects loops
   interactive.ts       # runInteractive(prompter): the prompt flow behind a Prompter interface
   clack-prompter.ts    # Prompter implemented on @clack/prompts
@@ -44,11 +45,11 @@ src/
   restore.ts           # restore(), findLatestCollection()
   errors.ts            # DotfileError
   test-helpers.ts      # shared fixtures for tests
-  *.test.ts            # colocated tests; cli.test.ts spawns the CLI with $HOME in a temp dir
+  *.test.ts            # colocated tests; cli.test.ts spawns the CLI with HOME/USERPROFILE in a temp dir
 dist/                  # cli.cjs (bin), index.cjs, index.d.cts
 .github/
   workflows/
-    ci.yml                        # push/PR: lint, typecheck, test with coverage, build (Node 22/24/26)
+    ci.yml                        # push/PR: lint, typecheck, test with coverage, build (ubuntu x Node 22/24/26, windows + macos on 24)
     release.yml                   # workflow_dispatch: publish to npm, push the version tag
     dependabot-auto-release.yml   # after CI on a dependabot PR: merge minor/patch, dispatch release.yml
   dependabot.yml                  # weekly, grouped minor+patch, for npm and github-actions
@@ -91,7 +92,8 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
 ## CI and releases
 
 - **CI** (`ci.yml`) runs on every push to `main` and every pull request: `pnpm lint`,
-  `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, on Node 22, 24 and 26. `mise run ci` runs the
+  `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, on Ubuntu with Node 22, 24 and 26 and on
+  Windows and macOS with Node 24 (`fail-fast: false`, steps under `shell: bash`). `mise run ci` runs the
   same sequence locally with `CI=true`; that flag matters because some tools (tsdown, for one) treat
   warnings as errors only in CI.
 - **Releases** are made only by `release.yml` (workflow_dispatch). npm Trusted Publishing is
@@ -131,10 +133,14 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   previous collections (`dotfiles-YYYYMMDD-HHMMSS` with or without `.zip`/`.tar.gz`), and files over
   the size cap. Rules live in `targets.ts`.
 - **`.env` scan** is bounded: depth 4 from the home directory, never entering hard-excluded
-  directories, never following symlinked directories, and skipping the top-level macOS user
-  folders (`ENV_SCAN_SKIPPED_FOLDERS`: Library, Desktop, Documents, Downloads, Movies, Music,
-  Pictures, Public) so it never triggers TCC "would like to access" prompts. Core targets under
-  `~/Library` and `--include-config` are unaffected by that skip.
+  directories, never following symlinked directories (or Windows junctions and other reparse
+  points), and skipping the top-level user folders (`ENV_SCAN_SKIPPED_FOLDERS`: the macOS ones —
+  Library, Desktop, Documents, Downloads, Movies, Music, Pictures, Public — so it never triggers
+  TCC "would like to access" prompts, plus Videos, Templates, snap for Linux and AppData,
+  Application Data, Local Settings, OneDrive, Contacts, Favorites, Links, Saved Games, Searches,
+  3D Objects for Windows; one flat list on every OS). Core targets under `~/Library` or `AppData`
+  and `--include-config` are unaffected by that skip. EPERM/EBUSY on `readdir`/`stat` are reported
+  as failures and skipped; the scan never throws (`plan.errors.test.ts` simulates them).
 - **Symlinks are followed at every level** when copying (`walk.ts`), with loop detection, so a
   stow-style setup is captured as real files and the archive is self-contained.
 - **Outputs**: files are always staged into the timestamped folder; zip and tar.gz are written from
@@ -174,6 +180,32 @@ include = [".config/foo", "work/scripts"]   # extra paths, relative to the home 
 exclude = [".config/kitty", "Snapshots"]    # paths or directory names to exclude
 ```
 
+## Platforms
+
+- **Default targets are per platform.** `targetsFor(platform)` = common categories + one of
+  `PLATFORM_TARGET_CATEGORIES` (`darwin`, `linux`, `win32`; anything else counts as `linux`) +
+  secrets. `PlanOptions.platform` (default `process.platform`) selects the set and is recorded on
+  the `Plan`, so a test on Linux can exercise all three lists. `DEFAULT_TARGETS` is this OS's list.
+  Add new targets to the right table in `targets.ts`, with `/` separators, relative to home
+  (`%USERPROFILE%` on Windows).
+- **Home-relative paths are POSIX everywhere inside the package**: target lists, `PlannedFile.path`,
+  summaries, restore listings and archive entry names all use `/`. Conversion to native happens
+  only at the filesystem boundary via `path.join(homeDir, posixPath)` (accepts `/` on Windows);
+  anything coming back native (`path.relative`, recursive `readdir`) goes through
+  `toPosixPath()` from `paths.ts`. Zip entries are built with `archiveEntryName()` — yazl throws on
+  a backslash — and tar writes `/` names itself, so both mirror the staged folder. Config
+  `include`/`exclude` entries are normalised `\` → `/` before validation (errors still quote the
+  user's spelling); `expandHome` accepts `~/` and `~\`; exclusion matching splits on either
+  separator; `rmSync` of staged output passes `maxRetries` for Windows file locks; restore compares
+  the source with the home directory case-insensitively on win32.
+- **Test policies.** `cli.test.ts` spawns `process.execPath` with tsx's JS entry (never the
+  `.bin` shim, a `.cmd` on Windows) and sets both `HOME` and `USERPROFILE`. File symlinks need a
+  privilege on Windows: such tests use `it.skipIf(!canSymlink())`; directory links go through
+  `symlinkDir()` (a junction on win32) and run everywhere. The socket test is skipped on win32.
+  Error-code assertions accept the platform variants (`EISDIR|EPERM|EACCES`). Fixture names must
+  not differ only by case (macOS and Windows file systems are case-insensitive). Helpers that
+  take a separator are unit-tested with `path.win32` on Linux.
+
 ## Testing
 
 - Test files colocate with source: `src/**/*.test.ts`
@@ -189,4 +221,5 @@ exclude = [".config/kitty", "Snapshots"]    # paths or directory names to exclud
   `@clack/prompts` mocked. No test drives a real TTY
 - Zip contents are verified by reading the central directory with `fflate`; tar contents with
   `tar.list`
-- CLI tests point `$HOME` at a temp directory; never let a test touch the real home directory
+- CLI tests point `HOME` and `USERPROFILE` at a temp directory; never let a test touch the real
+  home directory
