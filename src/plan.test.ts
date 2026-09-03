@@ -717,8 +717,9 @@ describe("resolveTargets", () => {
       expect(p.maxFileSizeMb).toBe(1);
     });
 
-    it("expands ~/ and resolves relative output directories against home", () => {
+    it("expands ~/ (and ~\\) and resolves relative output directories against home", () => {
       expect(plan({ outDir: "~/b" }).outDir).toBe(join(home, "b"));
+      expect(plan({ outDir: "~\\b" }).outDir).toBe(join(home, "b"));
       expect(plan({ outDir: "~" }).outDir).toBe(home);
       expect(plan({ outDir: "rel/out" }).outDir).toBe(join(home, "rel/out"));
     });

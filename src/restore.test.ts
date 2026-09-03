@@ -115,8 +115,9 @@ describe("restore", () => {
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("old zshrc");
   });
 
-  it("expands ~/ in the source", () => {
+  it("expands ~/ and ~\\ in the source", () => {
     expect(restore({ homeDir: home, source: `~/${older}` }).source).toBe(join(home, older));
+    expect(restore({ homeDir: home, source: `~\\${older}` }).source).toBe(join(home, older));
   });
 
   it("throws a DotfileError when no collection exists", () => {
@@ -171,7 +172,10 @@ describe("restore", () => {
 
     const summary = restore({ homeDir: home, force: true });
 
-    expect(summary.failed).toEqual([{ path: ".zshrc", error: expect.stringMatching(/EISDIR/) }]);
+    // EISDIR on Linux; macOS and Windows report EPERM or EACCES for the same copy.
+    expect(summary.failed).toEqual([
+      { path: ".zshrc", error: expect.stringMatching(/EISDIR|EPERM|EACCES/) },
+    ]);
     expect(summary.restored).toEqual([".config/nvim/lua/init.lua"]);
     expect(summary.skipped).toEqual([]);
   });

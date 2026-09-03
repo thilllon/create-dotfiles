@@ -6,6 +6,7 @@ import { create as createTar } from "tar";
 import { ZipFile } from "yazl";
 import { DotfileError } from "./errors";
 import type { PlanOptions } from "./options";
+import { archiveEntryName } from "./paths";
 import { type FailedEntry, type Plan, type PlannedFile, resolveTargets } from "./plan";
 import type { TargetGroup } from "./targets";
 import { copyInto } from "./walk";
@@ -87,7 +88,7 @@ async function writeZip(plan: Plan, files: readonly PlannedFile[], zipPath: stri
     await new Promise<void>((resolve, reject) => {
       zip.on("error", reject);
       for (const file of files) {
-        zip.addFile(join(plan.stagingDir, file.path), `${plan.name}/${file.path}`);
+        zip.addFile(join(plan.stagingDir, file.path), archiveEntryName(plan.name, file.path));
       }
       pipeline(source, out, (err) => (err ? reject(err) : resolve()));
       zip.end();
@@ -103,7 +104,11 @@ async function writeZip(plan: Plan, files: readonly PlannedFile[], zipPath: stri
   }
 }
 
-/** Tars the staged folder; a failed attempt does not leave a partial archive behind. */
+/**
+ * Tars the staged folder; a failed attempt does not leave a partial archive behind. tar walks
+ * the folder itself and writes `/`-separated entry names on every platform, so the tar always
+ * mirrors the folder layout (and therefore the zip).
+ */
 async function writeTar(plan: Plan, tarPath: string): Promise<void> {
   try {
     await createTar({ gzip: true, file: tarPath, cwd: plan.outDir, portable: true }, [plan.name]);
@@ -158,7 +163,8 @@ export async function writePlan(plan: Plan, options: WriteOptions = {}): Promise
       written.push(plan.outputs.tar);
     }
   } finally {
-    if (!keepFolder) rmSync(plan.stagingDir, { recursive: true, force: true });
+    // Retries cover Windows, where an archiver or indexer may still hold a staged file open.
+    if (!keepFolder) rmSync(plan.stagingDir, { recursive: true, force: true, maxRetries: 3 });
   }
 
   return summarize(plan, copied, failed, written, false);

@@ -93,6 +93,39 @@ describe("parseConfig", () => {
     expect(config.exclude).toEqual(["tmp", "f", "name"]);
   });
 
+  it("normalizes entries written with backslashes to / on every host", () => {
+    const config = parseConfig(
+      [
+        "[files]",
+        'include = ["AppData\\\\Roaming\\\\Code\\\\User", ".\\\\work\\\\", "a\\\\..\\\\b", "mixed/style\\\\path"]',
+        'exclude = ["Documents\\\\tmp", "name"]',
+      ].join("\n"),
+      home
+    );
+
+    expect(config.include).toEqual(["AppData/Roaming/Code/User", "work", "b", "mixed/style/path"]);
+    expect(config.exclude).toEqual(["Documents/tmp", "name"]);
+  });
+
+  it("quotes the user's own spelling when a backslash entry is rejected", () => {
+    expect(() => parseConfig('[files]\ninclude = ["..\\\\escape"]', home)).toThrow(
+      /must stay inside .*, got "\.\.\\escape"/
+    );
+    expect(() => parseConfig('[files]\ninclude = ["a\\\\..\\\\..\\\\x"]', home)).toThrow(
+      /got "a\\\.\.\\\.\.\\x"/
+    );
+  });
+
+  it.each(["C:\\Users\\me\\.zshrc", "C:/Users/me", "\\\\server\\share\\x", "/etc/passwd"])(
+    "rejects the absolute path %s on every host",
+    (entry) => {
+      const content = `[files]\ninclude = [${JSON.stringify(entry)}]`;
+      expect(() => parseConfig(content, home)).toThrow(DotfileError);
+      expect(() => parseConfig(content, home)).toThrow(/must be a relative path/);
+      expect(() => parseConfig(content, home)).toThrow(entry);
+    }
+  );
+
   it.each([
     ["malformed TOML", "[files\ninclude = broken", /Invalid TOML/],
     ["a [files] value that is not a table", "files = 1", /\[files\] must be a table/],

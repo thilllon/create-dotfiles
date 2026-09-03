@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { join, posix, relative, resolve, sep, win32 } from "node:path";
 import { parse } from "smol-toml";
 import { DotfileError } from "./errors";
 import { type OutputFormat, parseFormats } from "./formats";
+import { normalizeSlashes } from "./paths";
 
 export const CONFIG_FILE = ".dotfilesrc.toml";
 
@@ -27,15 +28,25 @@ export function emptyConfig(): DotfilesConfig {
   return { include: [], exclude: [], settings: {} };
 }
 
-/** Rejects absolute paths and any entry that resolves outside the base directory. */
-export function assertContainedPath(base: string, entry: string, label: string): void {
-  if (isAbsolute(entry)) {
-    throw new DotfileError(`${label} must be a relative path, got "${entry}"`);
+/**
+ * Rejects absolute paths and any entry that resolves outside the base directory. Absolute
+ * means absolute on either platform (`/etc/x`, `C:\\x`, `\\\\server\\share`), whatever the host,
+ * so a config file behaves the same wherever it is read. `shown` is the user's spelling for
+ * error messages when `entry` has already been normalised.
+ */
+export function assertContainedPath(
+  base: string,
+  entry: string,
+  label: string,
+  shown: string = entry
+): void {
+  if (posix.isAbsolute(entry) || win32.isAbsolute(entry)) {
+    throw new DotfileError(`${label} must be a relative path, got "${shown}"`);
   }
 
   const rel = relative(base, resolve(base, entry));
   if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`)) {
-    throw new DotfileError(`${label} must stay inside ${base}, got "${entry}"`);
+    throw new DotfileError(`${label} must stay inside ${base}, got "${shown}"`);
   }
 }
 
@@ -69,16 +80,19 @@ function pathList(value: unknown, key: string, homeDir: string, configPath: stri
         `${key} entries must be non-empty strings in ${configPath}, got ${JSON.stringify(entry)}`
       );
     }
-    assertContainedPath(homeDir, entry, `${key} entry`);
-    entries.push(normalizeEntry(entry));
+    // Windows users write `AppData\\Roaming\\x`; every path is `/`-separated from here on.
+    const slashed = normalizeSlashes(entry);
+    assertContainedPath(homeDir, slashed, `${key} entry`, entry);
+    entries.push(normalizeEntry(slashed));
   }
   return entries;
 }
 
 /**
- * `./x`, `x/`, `a//b` and `a/../b` all name the same home-relative path. One spelling keeps the
- * summary, the staged copy and the archive entry names in agreement; yazl refuses an entry name
- * with a `..` segment outright, so an unnormalized include used to fail the zip.
+ * `./x`, `x/`, `a//b`, `a/../b` and `a\\b` all name the same home-relative path. One spelling
+ * keeps the summary, the staged copy and the archive entry names in agreement; yazl refuses an
+ * entry name with a `..` segment or a backslash outright, so an unnormalized include used to
+ * fail the zip.
  */
 function normalizeEntry(entry: string): string {
   return posix.normalize(entry).replace(/(.)\/+$/, "$1");

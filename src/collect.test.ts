@@ -8,7 +8,7 @@ import {
   statSync,
   symlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { strFromU8, unzipSync } from "fflate";
 import { list as tarList } from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,6 +21,7 @@ import {
 } from "./collect";
 import { parseConfig } from "./config";
 import { DotfileError } from "./errors";
+import { toPosixPath } from "./paths";
 import { resolveTargets } from "./plan";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
 
@@ -49,6 +50,7 @@ function zipEntries(file: string): string[] {
 function filesUnder(dir: string): string[] {
   return (readdirSync(dir, { recursive: true }) as string[])
     .filter((rel) => statSync(join(dir, rel)).isFile())
+    .map((rel) => toPosixPath(rel, sep))
     .sort();
 }
 
@@ -137,6 +139,27 @@ describe("collect", () => {
       expect(every.filter((name) => name.startsWith("/") || name.includes(".."))).toEqual([]);
     }
   );
+
+  it("writes / entry names in zip and tar for an include spelled with backslashes", async () => {
+    createFile(home, "work/scripts/run.sh", "#!/bin/sh");
+    const config = parseConfig('[files]\ninclude = ["work\\\\scripts"]', home);
+
+    const summary = await run({ config, formats: ["folder", "zip", "tar"] });
+
+    expect(summary.copied.map((f) => f.path)).toContain("work/scripts/run.sh");
+    expect(filesUnder(join(out, FIXED_NAME))).toContain("work/scripts/run.sh");
+    expect(zipEntries(join(out, `${FIXED_NAME}.zip`))).toContain(
+      `${FIXED_NAME}/work/scripts/run.sh`
+    );
+    expect(await tarFileEntries(join(out, `${FIXED_NAME}.tar.gz`))).toContain(
+      `${FIXED_NAME}/work/scripts/run.sh`
+    );
+    const every = [
+      ...zipEntries(join(out, `${FIXED_NAME}.zip`)),
+      ...(await tarEntries(join(out, `${FIXED_NAME}.tar.gz`))).map((e) => e.path),
+    ];
+    expect(every.filter((name) => name.includes("\\"))).toEqual([]);
+  });
 
   it("zips an include spelled with .. under its clean name instead of failing", async () => {
     createFile(home, "notes/todo.md", "todo");

@@ -47,9 +47,10 @@ export interface ResolvedOptions {
   platform: TargetPlatform;
 }
 
+/** `~` and `~/x` (or `~\\x`, as Windows users write it) resolve against the home directory. */
 export function expandHome(path: string, homeDir: string): string {
   if (path === "~") return homeDir;
-  if (path.startsWith("~/")) return join(homeDir, path.slice(2));
+  if (path.startsWith("~/") || path.startsWith("~\\")) return join(homeDir, path.slice(2));
   return path;
 }
 

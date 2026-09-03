@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { DotfileError } from "./errors";
 import { expandHome } from "./options";
+import { isSamePath } from "./paths";
 import { COLLECTION_NAME_PATTERN } from "./targets";
 import { copyInto, walk } from "./walk";
 
@@ -83,7 +84,7 @@ function resolveSource(homeDir: string, source: string | undefined): string {
     }
     throw new DotfileError(`Restore source must be a directory: ${path}`);
   }
-  if (path === homeDir) {
+  if (isSamePath(path, homeDir)) {
     throw new DotfileError("Restore source must be a collection folder, not the home directory");
   }
   return path;
