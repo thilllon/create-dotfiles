@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>One command. Every dotfile you care about, collected into a timestamped folder, zip or tar.gz.</strong><br />
-  Secrets stay out unless you say otherwise. No config file required.
+  Your <code>.env</code> files come along; your private keys never do. No config file required.
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@ Run it in a terminal and it walks you through what it found, what it will never 
 
 1. Scans your home directory once and shows which known dotfiles exist on this machine, grouped (Shell, Git, Editors, Tools, …).
 2. Lists what is **never copied**: `node_modules`, `.git`, caches, SSH/GPG private keys, files over 10 MB.
-3. Asks whether to include **secret files** — `.env` files found by the scan (it tells you how many), plus `.npmrc`, `.netrc`, `.aws/credentials`, `.docker/config.json`. Default: no.
+3. Asks whether to include **secret files** — `.env` files found by the scan (it tells you how many), plus `.npmrc`, `.netrc`, `.aws/credentials`, `.docker/config.json`. Default: yes.
 4. Asks whether to include **everything under `~/.config`** (with a file count and size). Default: no.
 5. Lets you pick output formats — `folder` (preselected), `zip`, `tar.gz` — any combination.
 6. Shows the exact output paths and asks to proceed. Cancelling at any step writes nothing.
@@ -33,7 +33,7 @@ symlinked `~/.config/nvim`, a `.env` two levels deep, another `.env` inside `nod
 key pair and a 20 MB file:
 
 ```console
-$ npx create-dotfiles --auto --format folder,zip,tar --include-env
+$ npx create-dotfiles --auto --format folder,zip,tar
 Copied 9 files (132 B) from /Users/you
   .zshrc (13 B) [core]
   .gitconfig (20 B) [core]
@@ -65,7 +65,7 @@ home-relative path, so the folder is a faithful mirror and the archives restore 
 | **▸ Zero setup**              | No config file needed. Built-in targets cover shells, Git, Vim/Neovim, tmux, terminal emulators, Starship, fish, mise, VS Code and Cursor (macOS and Linux paths), and more.            |
 | **▸ Interactive or scripted** | A terminal gets prompts; `--auto` gets defaults. Piped or in CI, it falls back to `--auto` on its own.                                                                                   |
 | **▸ Timestamped, faithful**   | `~/dotfiles-YYYYMMDD-HHMMSS/` mirrors home-relative paths. Get a folder, a zip, a tar.gz, or all three in one run.                                                                       |
-| **▸ Secrets are opt-in**      | `.env` files (found by a bounded scan), `.npmrc`, `.netrc`, `.aws/credentials`, `.docker/config.json` only with `--include-env`. SSH and GPG private keys are never copied, ever.        |
+| **▸ Secrets in, keys out**    | `.env` files (found by a bounded scan), `.npmrc`, `.netrc`, `.aws/credentials`, `.docker/config.json` are included by default; `--no-include-env` leaves them out. SSH and GPG private keys are never copied, ever. |
 | **▸ Never copies junk**       | `node_modules`, `.git`, caches, previous collections and files over 10 MB are skipped — and the skips are reported, not hidden.                                                          |
 | **▸ Symlinks resolved**       | A stow-style symlinked `~/.config/nvim` is copied as real files, at every level, so nothing in the archive points back at a machine you no longer have.                                 |
 | **▸ Safe restore**            | `restore` puts the newest collection back without overwriting anything unless you pass `--force`.                                                                                       |
@@ -76,7 +76,7 @@ home-relative path, so the folder is a faithful mirror and the archives restore 
 
 ```shell
 npx create-dotfiles                 # interactive
-npx create-dotfiles --auto          # defaults: core targets, folder output, secrets excluded
+npx create-dotfiles --auto          # defaults: core targets + secrets, folder output
 npx create-dotfiles --dry-run       # show the plan, write nothing
 npx create-dotfiles restore         # put the newest collection back (never overwrites)
 ```
@@ -90,7 +90,7 @@ Every flag works with `--auto` and, in interactive mode, pre-fills the correspon
 | Flag                     | Default   | Effect                                                                                     |
 | ------------------------ | --------- | ------------------------------------------------------------------------------------------ |
 | `--auto`                 | off       | Run without prompts.                                                                       |
-| `--include-env`          | off       | Include the secrets group (`.env` files and the credential files listed above).            |
+| `--include-env`          | on        | Include the secrets group (`.env` files and the credential files listed above). `--no-include-env` turns it off. |
 | `--include-config`       | off       | Include everything under `~/.config`, minus the never-copied rules.                        |
 | `--format <list>`        | `folder`  | Comma-separated subset of `folder`, `zip`, `tar` (`tar.gz` and `tgz` are accepted).        |
 | `--out <dir>`            | `~`       | Parent directory for the output. `~/` is expanded.                                          |
@@ -119,7 +119,7 @@ Files that already exist are reported as `[SKIP] <path> exists (use --force)`. R
 - Terminal and tools: `.tmux.conf` `.config/tmux` `.config/starship.toml` `.config/alacritty` `.config/kitty` `.config/wezterm` `.config/ghostty` `.config/fish` `.config/mise` `.tool-versions` `.editorconfig` `.config/gh/config.yml` `.config/htop` `.config/bat` `.config/lazygit` `.config/zellij` `.hammerspoon` `.config/karabiner` `.skhdrc` `.yabairc` `.Brewfile` `Brewfile`
 - Non-secret parts of secret-adjacent tools: `.ssh/config` `.gnupg/gpg.conf` `.gnupg/gpg-agent.conf` `.aws/config`
 
-**Secrets (`--include-env`)** — `.npmrc` `.yarnrc` `.netrc` `.aws/credentials` `.docker/config.json`, and every `.env` / `.env.*` found by a scan of your home directory that goes at most four levels deep, never enters the never-copied directories, does not follow symlinked directories, and skips the top-level `Library`, `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures` and `Public` folders — so macOS never asks for folder access. (Core targets under `~/Library`, such as VS Code settings, are unaffected.)
+**Secrets (on by default; `--no-include-env` to skip)** — `.npmrc` `.yarnrc` `.netrc` `.aws/credentials` `.docker/config.json`, and every `.env` / `.env.*` found by a scan of your home directory that goes at most four levels deep, never enters the never-copied directories, does not follow symlinked directories, and skips the top-level `Library`, `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures` and `Public` folders — so macOS never asks for folder access. (Core targets under `~/Library`, such as VS Code settings, are unaffected.)
 
 **Everything under `~/.config` (`--include-config`)** — after the never-copied rules and the size cap.
 
@@ -137,7 +137,7 @@ If `~/.dotfilesrc.toml` exists it is read; it is never created for you.
 
 ```toml
 [settings]
-include_env = false
+include_env = true
 include_config = false
 formats = ["folder", "zip"]
 max_file_size_mb = 10

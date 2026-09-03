@@ -46,7 +46,7 @@ describe("resolveTargets", () => {
       createFile(home, ".zshrc");
       createFile(home, ".config/nvim/init.lua");
 
-      const p = plan();
+      const p = plan({ includeEnv: false });
 
       expect(paths(p)).toEqual([".zshrc", ".config/nvim/init.lua"]);
       expect(p.found.map((f) => f.path)).toEqual([".zshrc", ".config/nvim"]);
@@ -78,7 +78,7 @@ describe("resolveTargets", () => {
     });
 
     it("does not report secrets or ~/.config as missing when they are not requested", () => {
-      const p = plan();
+      const p = plan({ includeEnv: false });
 
       expect(p.missing.map((m) => m.path)).not.toContain(".npmrc");
       expect(p.missing.map((m) => m.path)).not.toContain(".config");
@@ -109,13 +109,13 @@ describe("resolveTargets", () => {
       expect(p.stagingDir).toBe(join(home, FIXED_NAME));
     });
 
-    it("defaults to a folder in the home directory, no opt-in groups and a 10 MB cap", () => {
+    it("defaults to a folder in the home directory, secrets on, ~/.config off and a 10 MB cap", () => {
       const p = resolveTargets({ homeDir: home });
 
       expect(p.name).toMatch(/^dotfiles-\d{8}-\d{6}$/);
       expect(p.formats).toEqual(["folder"]);
       expect(p.outDir).toBe(home);
-      expect(p.includeEnv).toBe(false);
+      expect(p.includeEnv).toBe(true);
       expect(p.includeConfig).toBe(false);
       expect(p.maxFileSizeMb).toBe(10);
     });
@@ -254,11 +254,12 @@ describe("resolveTargets", () => {
       createFile(home, "projects/app/src/index.ts", "not env");
     });
 
-    it("is off by default", () => {
-      const p = plan();
+    it("is on by default and can be turned off", () => {
+      expect(plan().files.some((f) => f.group === "secrets")).toBe(true);
 
-      expect(paths(p)).toEqual([]);
-      expect(p.files.some((f) => f.group === "secrets")).toBe(false);
+      const off = plan({ includeEnv: false });
+      expect(paths(off)).toEqual([]);
+      expect(off.files.some((f) => f.group === "secrets")).toBe(false);
     });
 
     it("includes credential files and every .env file within four levels", () => {
@@ -344,7 +345,7 @@ describe("resolveTargets", () => {
       createFile(home, ".config/nvim/.env", "NVIM=1");
       createFile(home, ".config/nvim/init.lua");
 
-      expect(paths(plan())).toEqual([".config/nvim/init.lua"]);
+      expect(paths(plan({ includeEnv: false }))).toEqual([".config/nvim/init.lua"]);
       expect(plan({ includeEnv: true }).files).toContainEqual({
         path: ".config/nvim/.env",
         size: 6,
@@ -365,11 +366,14 @@ describe("resolveTargets", () => {
     });
 
     it("is off by default", () => {
-      expect(paths(plan())).toEqual([".config/nvim/init.lua", ".config/Code/User/settings.json"]);
+      expect(paths(plan({ includeEnv: false }))).toEqual([
+        ".config/nvim/init.lua",
+        ".config/Code/User/settings.json",
+      ]);
     });
 
     it("adds everything under ~/.config minus excludes and files already claimed by core", () => {
-      const p = plan({ includeConfig: true });
+      const p = plan({ includeConfig: true, includeEnv: false });
 
       expect(p.files).toEqual([
         { path: ".config/nvim/init.lua", size: 7, group: "core", target: ".config/nvim" },
@@ -384,7 +388,9 @@ describe("resolveTargets", () => {
     });
 
     it("hands .env files under ~/.config to the secrets group", () => {
-      expect(paths(plan({ includeConfig: true }))).not.toContain(".config/tool/.env");
+      expect(paths(plan({ includeConfig: true, includeEnv: false }))).not.toContain(
+        ".config/tool/.env"
+      );
       expect(paths(plan({ includeConfig: true, includeEnv: true }))).toContain(".config/tool/.env");
     });
 

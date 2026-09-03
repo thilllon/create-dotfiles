@@ -15,7 +15,7 @@ export interface PlanOptions {
    * directory. Defaults to `settings.out` from the config file, then the home directory.
    */
   outDir?: string;
-  /** Include the `secrets` group (`.env` files, `.npmrc`, `.netrc`, ...). Default false. */
+  /** Include the `secrets` group (`.env` files, `.npmrc`, `.netrc`, ...). Default true. */
   includeEnv?: boolean;
   /** Include everything under `~/.config`. Default false. */
   includeConfig?: boolean;
@@ -65,7 +65,7 @@ export function resolveOptions(options: PlanOptions = {}): ResolvedOptions {
   return {
     homeDir,
     outDir,
-    includeEnv: options.includeEnv ?? settings.includeEnv ?? false,
+    includeEnv: options.includeEnv ?? settings.includeEnv ?? true,
     includeConfig: options.includeConfig ?? settings.includeConfig ?? false,
     formats: parseFormats(options.formats ?? settings.formats ?? DEFAULT_FORMATS),
     maxFileSizeMb,

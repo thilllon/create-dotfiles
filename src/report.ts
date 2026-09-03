@@ -111,7 +111,7 @@ export function formatNeverCopied(maxFileSizeMb: number): string {
     "SSH private keys: everything in ~/.ssh except config and *.pub",
     "GPG private keys: ~/.gnupg/private-keys-v1.d, *.gpg and *.kbx",
     `Files larger than ${maxFileSizeMb} MB`,
-    ".env files and other secrets unless you opt in (--include-env)",
+    ".env files and other secrets are included by default; --no-include-env (or include_env = false) leaves them out",
     `The .env scan looks ${ENV_SCAN_MAX_DEPTH} levels deep and never enters ${ENV_SCAN_SKIPPED_FOLDERS.map((name) => `~/${name}`).join(", ")}`,
   ].join("\n");
 }

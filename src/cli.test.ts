@@ -168,8 +168,17 @@ describe("cli", () => {
       expect(stdout).toContain(`tar.gz: ${join(tempHome, `${name}.tar.gz`)}`);
     });
 
-    it("leaves secrets out by default", () => {
+    it("includes secrets by default", () => {
       const { stdout } = runCli("--auto");
+
+      const [name] = collections();
+      expect(existsSync(join(tempHome, name, ".npmrc"))).toBe(true);
+      expect(existsSync(join(tempHome, name, "projects/app/.env"))).toBe(true);
+      expect(stdout).toContain("Per group: core 3, custom 0, secrets 2, config-all 0");
+    });
+
+    it("--no-include-env leaves secrets out", () => {
+      const { stdout } = runCli("--auto", "--no-include-env");
 
       const [name] = collections();
       expect(existsSync(join(tempHome, name, ".npmrc"))).toBe(false);
@@ -209,7 +218,7 @@ describe("cli", () => {
     it("--include-config picks up everything under ~/.config", () => {
       createFile(tempHome, ".config/tool/config.toml", "a = 1");
 
-      const { status, stdout } = runCli("--auto", "--include-config");
+      const { status, stdout } = runCli("--auto", "--include-config", "--no-include-env");
 
       expect(status).toBe(0);
       const [name] = collections();

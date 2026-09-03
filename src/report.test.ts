@@ -76,6 +76,7 @@ describe("formatSummary", () => {
       outDir: out,
       now: FIXED_DATE,
       maxFileSizeMb: 1,
+      includeEnv: false,
     });
 
     const brief = formatSummary(summary);

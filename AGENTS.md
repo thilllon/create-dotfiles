@@ -6,7 +6,8 @@
 folder — `~/dotfiles-YYYYMMDD-HHMMSS/` — and optionally a zip and/or tar.gz of it, preserving
 home-relative paths. In a terminal it runs an interactive flow (`@clack/prompts`); with `--auto`,
 when piped, or in CI it runs with defaults. Secrets (`.env` files found by a bounded scan, `.npmrc`,
-`.netrc`, `.aws/credentials`, `.docker/config.json`) are opt-in; SSH and GPG private keys are never
+`.netrc`, `.aws/credentials`, `.docker/config.json`) are included by default and can be left out with
+`--no-include-env`; SSH and GPG private keys are never
 copied. `restore` copies a collection back without overwriting unless `--force`. The same code is
 published as a typed library (`dist/index.cjs` + `dist/index.d.cts`).
 
@@ -123,7 +124,7 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   combinations.
 - **Groups**: `core` (built-in targets), `custom` (config `include`), `secrets`, `config-all`. A
   `.env` file belongs to `secrets` wherever it sits, even inside a core target or `~/.config`, so
-  secrets are only ever copied with `--include-env`.
+  secrets are left out only with `--no-include-env` or `include_env = false`.
 - **Never copied, regardless of options**: hard-excluded directory names anywhere in a path
   (`node_modules`, `.git`, caches, …), `Library/Caches`, `Library/Application Support/*/Cache*`,
   private keys (`.ssh/*` except `config` and `*.pub`; `.gnupg/private-keys-v1.d`, `*.gpg`, `*.kbx`),
@@ -162,7 +163,7 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
 # ~/.dotfilesrc.toml — optional, never created automatically
 
 [settings]
-include_env = false
+include_env = true
 include_config = false
 formats = ["folder", "zip"]
 max_file_size_mb = 10

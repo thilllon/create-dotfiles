@@ -125,7 +125,7 @@ describe("runInteractive", () => {
       "Include everything under ~/.config? (1 files, ~0.0 MB after excludes)",
       "Proceed?",
     ]);
-    expect(prompter.confirms.map((c) => c.initialValue)).toEqual([false, false, true]);
+    expect(prompter.confirms.map((c) => c.initialValue)).toEqual([true, false, true]);
     expect(prompter.multiselects).toEqual([
       {
         message: "Output formats",

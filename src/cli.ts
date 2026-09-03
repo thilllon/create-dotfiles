@@ -70,7 +70,7 @@ cli
   .option("--auto", "Non-interactive run with defaults (implied when not in a terminal)")
   .option(
     "--include-env",
-    "Include secrets: .env files, .npmrc, .yarnrc, .netrc, .aws/credentials, .docker/config.json"
+    "Include secrets: .env files, .npmrc, .yarnrc, .netrc, .aws/credentials, .docker/config.json (default: on; --no-include-env to leave them out)"
   )
   .option("--include-config", "Include everything under ~/.config")
   .option("--format <list>", "Comma-separated output formats: folder, zip, tar (default: folder)")
