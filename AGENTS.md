@@ -80,9 +80,10 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
 
 ## Git Conventions
 
-- Do NOT add `Co-Authored-By` lines to commit messages
-- `main` is protected (pull requests required). The maintainer pushes directly as an admin; GitHub
-  Actions cannot, which is why releases never push a commit (see below)
+- Do NOT add `Co-Authored-By` lines to commit messages. A `Claude-Session:` trailer is fine.
+- `main` is protected (pull requests required). The maintainer pushes directly as an admin;
+  GITHUB_TOKEN cannot, which is why the release workflow pushes its version commit with the
+  maintainer's `RELEASE_TOKEN` (see below)
 - lefthook runs `pnpm format` on pre-commit and lint/typecheck/test/build on pre-push. CI and the
   release job set `LEFTHOOK=0`
 
@@ -96,11 +97,17 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   registered for that workflow file, so publishing from anywhere else is rejected. There is no
   NPM_TOKEN. release-it runs with `npm.skipChecks` because its `npm whoami` pre-flight cannot work
   under OIDC.
-- **npm is the source of truth for the version.** GITHUB_TOKEN cannot push to the protected `main`,
-  so the version bump is never committed. The workflow reads the latest version from npm, adds one
-  patch (or takes the `version` input for a minor/major bump), and runs `release-it --ci <version>`,
-  which rewrites `package.json`, builds, publishes, tags `v<version>` and pushes only the tag. The
-  `version` field on `main` is informational and lags npm.
+- **The version on `main` matches npm after every release.** The workflow reads the latest
+  version from npm, adds one patch (or takes the `version` input for a minor/major bump), and
+  runs `release-it --ci <version>`, which rewrites `package.json`, builds, publishes, commits
+  `chore(release): v<version>`, tags it and pushes both. npm is used as the reference only so a
+  stale `package.json` can never cause a publish of a version that already exists.
+- **`RELEASE_TOKEN` is required.** GITHUB_TOKEN cannot push to the protected `main` (GH006), so
+  the release checkout uses `RELEASE_TOKEN`, a fine-grained personal access token of a repository
+  admin scoped to this repository with Contents: Read and write. The workflow fails before doing
+  anything if the secret is missing, so it can never publish to npm without also committing. The
+  push made with that token runs CI on `main`; it cannot start another release, because
+  `release.yml` only runs on `workflow_dispatch`.
 - **Dependabot**: minor and patch updates arrive weekly as one grouped PR per ecosystem.
   `dependabot-auto-release.yml` merges such a PR once CI is green and dispatches a release, so the
   package gets a new patch version with no human involved. Major bumps stay open for review.

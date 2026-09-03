@@ -30,9 +30,26 @@ jobs:
       # trusted publisher, otherwise `npm publish` is rejected.
       id-token: write
     steps:
+      # main is protected (pull requests required). GITHUB_TOKEN can never bypass that
+      # (GH006), so the version-bump commit is pushed with RELEASE_TOKEN: a fine-grained
+      # personal access token of a maintainer whose pushes bypass the rule (repository
+      # admin), scoped to this repository with "Contents: Read and write". It is checked
+      # before anything runs so that a missing token cannot leave npm published and git
+      # not bumped, which is exactly the drift this token exists to prevent.
+      - name: Check RELEASE_TOKEN
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::RELEASE_TOKEN is not set. Create a fine-grained personal access token for a repository admin (this repository only, Contents: Read and write, Metadata: Read) and add it as a repository secret named RELEASE_TOKEN under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # Persisted in the checkout so release-it's `git push` of the version commit
+          # and the tag goes out with a token that may push to main.
+          token: ${{ secrets.RELEASE_TOKEN }}
       - uses: jdx/mise-action@v4
         with:
           cache: true
@@ -49,12 +66,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      # main is a protected branch that GITHUB_TOKEN cannot push to (GH006), so the
-      # version bump is never committed: npm is the source of truth for the version.
-      # The next version is latest-on-npm + one patch unless given explicitly;
-      # release-it rewrites package.json before building, publishes, and pushes only
-      # the tag, which the token is allowed to do. The version field on main is
-      # therefore informational.
+      # The next version is latest-on-npm + one patch unless given explicitly. npm is the
+      # reference so that a stale package.json can never make release-it try to publish a
+      # version that already exists. release-it rewrites package.json, builds, publishes,
+      # commits "chore(release): v<version>", tags it and pushes both, so the version on
+      # main matches npm after every release. That push runs CI on main; it cannot start
+      # another release, because this workflow only runs on workflow_dispatch.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
