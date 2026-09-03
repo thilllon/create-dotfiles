@@ -14,7 +14,15 @@ import {
   resolveTargets,
 } from "./plan";
 import { ENV_SCAN_SKIPPED_FOLDERS, resolveTargetPlatform } from "./targets";
-import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
+import {
+  canSymlink,
+  createFile,
+  FIXED_DATE,
+  FIXED_NAME,
+  IS_WINDOWS,
+  makeTempDir,
+  symlinkDir,
+} from "./test-helpers";
 
 describe("collectionName", () => {
   it("formats local time as dotfiles-YYYYMMDD-HHMMSS", () => {
@@ -403,7 +411,7 @@ describe("resolveTargets", () => {
 
     it("does not follow symlinked directories during the scan", () => {
       createFile(home, "real/.env", "REAL=1");
-      symlinkSync(join(home, "real"), join(home, "linked"));
+      symlinkDir(join(home, "real"), join(home, "linked"));
 
       const found = paths(plan({ includeEnv: true }));
 
@@ -411,7 +419,7 @@ describe("resolveTargets", () => {
       expect(found).not.toContain("linked/.env");
     });
 
-    it("follows a symlinked .env file", () => {
+    it.skipIf(!canSymlink())("follows a symlinked .env file", () => {
       createFile(home, "targets/env.txt", "LINKED=1");
       symlinkSync(join(home, "targets/env.txt"), join(home, "projects/.env"));
 
@@ -580,7 +588,7 @@ describe("resolveTargets", () => {
   });
 
   describe("symlinks and unreadable entries", () => {
-    it("follows a symlinked file and records the target's size", () => {
+    it.skipIf(!canSymlink())("follows a symlinked file and records the target's size", () => {
       createFile(home, "real-zshrc", "export FOO=1");
       symlinkSync(join(home, "real-zshrc"), join(home, ".zshrc"));
 
@@ -590,12 +598,12 @@ describe("resolveTargets", () => {
     it("follows a symlinked directory", () => {
       createFile(home, "real-nvim/init.lua", "-- vim");
       mkdirSync(join(home, ".config"));
-      symlinkSync(join(home, "real-nvim"), join(home, ".config/nvim"));
+      symlinkDir(join(home, "real-nvim"), join(home, ".config/nvim"));
 
       expect(paths(plan())).toEqual([".config/nvim/init.lua"]);
     });
 
-    it("dereferences symlinks nested inside a directory target", () => {
+    it.skipIf(!canSymlink())("dereferences symlinks nested inside a directory target", () => {
       createFile(home, "target.conf", "nested");
       mkdirSync(join(home, ".config/kitty"), { recursive: true });
       symlinkSync(join(home, "target.conf"), join(home, ".config/kitty/kitty.conf"));
@@ -607,7 +615,7 @@ describe("resolveTargets", () => {
 
     it("reports a symlink loop as failed and still plans the rest of the directory", () => {
       createFile(home, ".config/nvim/init.lua");
-      symlinkSync(join(home, ".config/nvim"), join(home, ".config/nvim/self"));
+      symlinkDir(join(home, ".config/nvim"), join(home, ".config/nvim/self"));
 
       const p = plan();
 
@@ -624,8 +632,8 @@ describe("resolveTargets", () => {
     it("does not mistake two sibling symlinks to the same directory for a loop", () => {
       createFile(home, "shared/common.lua", "-- shared");
       mkdirSync(join(home, ".config/nvim"), { recursive: true });
-      symlinkSync(join(home, "shared"), join(home, ".config/nvim/a"));
-      symlinkSync(join(home, "shared"), join(home, ".config/nvim/b"));
+      symlinkDir(join(home, "shared"), join(home, ".config/nvim/a"));
+      symlinkDir(join(home, "shared"), join(home, ".config/nvim/b"));
 
       const p = plan();
 
@@ -635,7 +643,7 @@ describe("resolveTargets", () => {
 
     it("detects a symlink pointing at an ancestor of the directory being walked", () => {
       createFile(home, ".config/nvim/lua/init.lua");
-      symlinkSync(join(home, ".config/nvim"), join(home, ".config/nvim/lua/up"));
+      symlinkDir(join(home, ".config/nvim"), join(home, ".config/nvim/lua/up"));
 
       const p = plan();
 
@@ -649,18 +657,22 @@ describe("resolveTargets", () => {
       ]);
     });
 
-    it("reports a broken symlink as failed rather than silently missing", () => {
-      symlinkSync(join(home, "does-not-exist"), join(home, ".vimrc"));
-      expect(lstatSync(join(home, ".vimrc")).isSymbolicLink()).toBe(true);
+    it.skipIf(!canSymlink())(
+      "reports a broken symlink as failed rather than silently missing",
+      () => {
+        symlinkSync(join(home, "does-not-exist"), join(home, ".vimrc"));
+        expect(lstatSync(join(home, ".vimrc")).isSymbolicLink()).toBe(true);
 
-      const p = plan();
+        const p = plan();
 
-      expect(p.failed).toEqual([{ path: ".vimrc", group: "core", error: "broken symlink" }]);
-      expect(p.missing.map((m) => m.path)).not.toContain(".vimrc");
-      expect(p.found.map((f) => f.path)).toContain(".vimrc");
-    });
+        expect(p.failed).toEqual([{ path: ".vimrc", group: "core", error: "broken symlink" }]);
+        expect(p.missing.map((m) => m.path)).not.toContain(".vimrc");
+        expect(p.found.map((f) => f.path)).toContain(".vimrc");
+      }
+    );
 
-    it("reports a socket as failed instead of trying to read it", async () => {
+    // Windows has no filesystem sockets (`listen(path)` means a named pipe there).
+    it.skipIf(IS_WINDOWS)("reports a socket as failed instead of trying to read it", async () => {
       createFile(home, ".config/nvim/init.lua");
       const server = createServer();
       await new Promise<void>((resolve) => server.listen(join(home, ".config/nvim/sock"), resolve));
@@ -745,7 +757,7 @@ describe("filterPlan", () => {
     createFile(home, "projects/app/.env");
     createFile(home, "notes/todo.md");
     createFile(home, "big.bin", Buffer.alloc(1024 * 1024 + 1));
-    symlinkSync(join(home, ".config/nvim"), join(home, ".config/nvim/self"));
+    symlinkDir(join(home, ".config/nvim"), join(home, ".config/nvim/self"));
     createFile(
       home,
       ".dotfilesrc.toml",

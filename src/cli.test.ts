@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unzipSync } from "fflate";
@@ -7,9 +8,11 @@ import { list as tarList } from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFile, makeTempDir } from "./test-helpers";
 
-// Vitest runs with the project root as cwd, so paths resolve from there.
+// Vitest runs with the project root as cwd, so paths resolve from there. tsx is started as
+// a JS entry under the current node binary rather than through node_modules/.bin, which on
+// Windows is a .cmd shim that spawnSync cannot run without a shell.
 const repoRoot = process.cwd();
-const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
+const tsxCli = createRequire(join(repoRoot, "package.json")).resolve("tsx/cli");
 const cliPath = join(repoRoot, "src", "cli.ts");
 const COLLECTION = /^dotfiles-\d{8}-\d{6}$/;
 
@@ -25,12 +28,13 @@ describe("cli", () => {
   });
 
   /**
-   * Runs the CLI in a subprocess with $HOME pointed at a throwaway directory. stdio are pipes,
-   * so the process is never attached to a TTY.
+   * Runs the CLI in a subprocess with the home directory pointed at a throwaway directory:
+   * `os.homedir()` reads $HOME on POSIX and %USERPROFILE% on Windows, so both are set. stdio
+   * are pipes, so the process is never attached to a TTY.
    */
   function runCli(...args: string[]) {
-    const result = spawnSync(tsxBin, [cliPath, ...args], {
-      env: { ...process.env, HOME: tempHome },
+    const result = spawnSync(process.execPath, [tsxCli, cliPath, ...args], {
+      env: { ...process.env, HOME: tempHome, USERPROFILE: tempHome },
       encoding: "utf8",
       cwd: tmpdir(),
     });
@@ -66,7 +70,8 @@ describe("cli", () => {
       expect(stdout).toContain("node_modules");
       expect(stdout).toContain("never enters ~/Library, ~/Desktop, ~/Documents");
       expect(stdout).toContain(".dotfilesrc.toml");
-      // Nothing under $HOME is read or written on --help (module scope must stay side-effect free).
+      // Nothing under the home directory the child actually used is read or written on --help
+      // (module scope must stay side-effect free).
       expect(readdirSync(tempHome)).toEqual([]);
     });
 

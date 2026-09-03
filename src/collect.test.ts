@@ -23,7 +23,7 @@ import { parseConfig } from "./config";
 import { DotfileError } from "./errors";
 import { toPosixPath } from "./paths";
 import { resolveTargets } from "./plan";
-import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
+import { canSymlink, createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
 
 async function tarEntries(file: string): Promise<{ path: string; type: string }[]> {
   const entries: { path: string; type: string }[] = [];
@@ -245,7 +245,7 @@ describe("collect", () => {
     expect(summary.missing).toContainEqual({ path: ".bashrc", group: "core" });
   });
 
-  it("stages real content for symlinked dotfiles", async () => {
+  it.skipIf(!canSymlink())("stages real content for symlinked dotfiles", async () => {
     createFile(home, "real-vimrc", "set nu");
     symlinkSync(join(home, "real-vimrc"), join(home, ".vimrc"));
 

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -17,6 +17,41 @@ export function createFile(
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, content);
   return fullPath;
+}
+
+export const IS_WINDOWS = process.platform === "win32";
+
+let symlinkProbe: boolean | undefined;
+
+/**
+ * Whether this process may create file symlinks. On Windows that needs Developer Mode or the
+ * SeCreateSymbolicLinkPrivilege (administrators have it; the GitHub runners do), so tests
+ * that link a *file* run under `it.skipIf(!canSymlink())`. Directory links do not need the
+ * probe: {@link symlinkDir} falls back to a junction on Windows.
+ */
+export function canSymlink(): boolean {
+  if (symlinkProbe === undefined) {
+    const dir = makeTempDir("dotfiles-symlink-probe-");
+    try {
+      writeFileSync(join(dir, "target"), "x");
+      symlinkSync(join(dir, "target"), join(dir, "link"));
+      symlinkProbe = true;
+    } catch {
+      symlinkProbe = false;
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }
+  return symlinkProbe;
+}
+
+/**
+ * Links a directory. A junction on Windows (no privilege needed; `target` must be absolute,
+ * which every caller passes), a plain symlink elsewhere. Both are reported by `lstat` as
+ * symbolic links, resolved by `realpath` and not entered by the `.env` scan.
+ */
+export function symlinkDir(target: string, path: string): void {
+  symlinkSync(target, path, IS_WINDOWS ? "junction" : undefined);
 }
 
 /** 2026-09-02 11:03:42 local time, i.e. `dotfiles-20260902-110342`. */
