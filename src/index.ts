@@ -66,6 +66,8 @@ export {
 } from "./restore";
 export {
   COLLECTION_NAME_PATTERN,
+  COMMON_TARGET_CATEGORIES,
+  COMMON_TARGETS,
   DEFAULT_TARGETS,
   ENV_SCAN_MAX_DEPTH,
   ENV_SCAN_SKIPPED_FOLDERS,
@@ -73,6 +75,12 @@ export {
   isEnvFile,
   isExcluded,
   isHardExcluded,
+  PLATFORM_TARGET_CATEGORIES,
+  PLATFORM_TARGETS,
+  resolveTargetPlatform,
+  type TargetCategory,
   type TargetGroup,
+  type TargetPlatform,
   type TargetSpec,
+  targetsFor,
 } from "./targets";

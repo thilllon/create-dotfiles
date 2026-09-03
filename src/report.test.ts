@@ -154,6 +154,8 @@ describe("formatNeverCopied", () => {
     expect(text).toContain(
       "never enters ~/Library, ~/Desktop, ~/Documents, ~/Downloads, ~/Movies, ~/Music, ~/Pictures, ~/Public"
     );
+    expect(text).toContain("~/Videos, ~/Templates, ~/snap, ~/AppData");
+    expect(text).toContain("~/OneDrive");
     expect(formatNeverCopied(25)).toContain("larger than 25 MB");
   });
 });

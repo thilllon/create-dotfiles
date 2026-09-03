@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { type DotfilesConfig, loadConfig } from "./config";
 import { DotfileError } from "./errors";
 import { type OutputFormat, parseFormats } from "./formats";
+import { resolveTargetPlatform, type TargetPlatform } from "./targets";
 
 export const DEFAULT_MAX_FILE_SIZE_MB = 10;
 export const DEFAULT_FORMATS: readonly OutputFormat[] = ["folder"];
@@ -27,6 +28,11 @@ export interface PlanOptions {
   now?: Date;
   /** Pre-loaded config; when omitted `~/.dotfilesrc.toml` is read (never created). */
   config?: DotfilesConfig;
+  /**
+   * Which platform's default targets to attempt: a `process.platform` value (`darwin`, `linux`,
+   * `win32`; anything else counts as `linux`). Defaults to the platform this process runs on.
+   */
+  platform?: string;
 }
 
 export interface ResolvedOptions {
@@ -38,6 +44,7 @@ export interface ResolvedOptions {
   maxFileSizeMb: number;
   now: Date;
   config: DotfilesConfig;
+  platform: TargetPlatform;
 }
 
 export function expandHome(path: string, homeDir: string): string {
@@ -71,5 +78,6 @@ export function resolveOptions(options: PlanOptions = {}): ResolvedOptions {
     maxFileSizeMb,
     now: options.now ?? new Date(),
     config,
+    platform: resolveTargetPlatform(options.platform),
   };
 }

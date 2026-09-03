@@ -13,6 +13,7 @@ import {
   type Plan,
   resolveTargets,
 } from "./plan";
+import { ENV_SCAN_SKIPPED_FOLDERS, resolveTargetPlatform } from "./targets";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir } from "./test-helpers";
 
 describe("collectionName", () => {
@@ -55,18 +56,91 @@ describe("resolveTargets", () => {
       expect(p.missing.every((m) => m.group === "core")).toBe(true);
     });
 
-    it("finds VS Code and Cursor settings at both the macOS and Linux paths", () => {
-      createFile(home, "Library/Application Support/Code/User/settings.json", "{}");
-      createFile(home, "Library/Application Support/Code/User/snippets/ts.json", "{}");
-      createFile(home, ".config/Code/User/keybindings.json", "[]");
-      createFile(home, ".config/Cursor/User/settings.json", "{}");
+    describe("per platform", () => {
+      beforeEach(() => {
+        createFile(home, "Library/Application Support/Code/User/settings.json", "{}");
+        createFile(home, "Library/Application Support/Code/User/snippets/ts.json", "{}");
+        createFile(home, ".hammerspoon/init.lua", "-- hs");
+        createFile(home, ".config/Code/User/keybindings.json", "[]");
+        createFile(home, ".config/Code - OSS/User/settings.json", "{}");
+        createFile(home, ".config/VSCodium/User/settings.json", "{}");
+        createFile(home, ".config/Cursor/User/settings.json", "{}");
+        createFile(home, ".config/i3/config", "i3");
+        createFile(home, "AppData/Roaming/Code/User/settings.json", "{}");
+        createFile(home, "AppData/Roaming/Cursor/User/snippets/ts.json", "{}");
+        createFile(home, "AppData/Local/nvim/init.lua", "-- nvim");
+        createFile(home, "Documents/PowerShell/Microsoft.PowerShell_profile.ps1", "ps");
+        createFile(home, ".wslconfig", "[wsl2]");
+        createFile(home, ".wezterm.lua", "return {}");
+      });
 
-      expect(paths(plan())).toEqual([
-        "Library/Application Support/Code/User/settings.json",
-        "Library/Application Support/Code/User/snippets/ts.json",
-        ".config/Code/User/keybindings.json",
-        ".config/Cursor/User/settings.json",
-      ]);
+      it("defaults to the platform this process runs on", () => {
+        expect(plan().platform).toBe(resolveTargetPlatform(process.platform));
+        expect(paths(plan())).toEqual(paths(plan({ platform: process.platform })));
+      });
+
+      it("darwin finds the Library editor files and macOS tools only", () => {
+        const p = plan({ platform: "darwin", includeEnv: false });
+
+        expect(p.platform).toBe("darwin");
+        expect(paths(p)).toEqual([
+          ".wezterm.lua",
+          "Library/Application Support/Code/User/settings.json",
+          "Library/Application Support/Code/User/snippets/ts.json",
+          ".hammerspoon/init.lua",
+        ]);
+        const missing = p.missing.map((m) => m.path);
+        expect(missing).toContain(".skhdrc");
+        expect(missing.some((m) => m.startsWith("AppData/"))).toBe(false);
+        expect(missing.some((m) => m.startsWith(".config/Code"))).toBe(false);
+        expect(missing).not.toContain(".config/i3");
+      });
+
+      it("linux finds the .config editor files and desktop tools only", () => {
+        const p = plan({ platform: "linux", includeEnv: false });
+
+        expect(p.platform).toBe("linux");
+        expect(paths(p)).toEqual([
+          ".wezterm.lua",
+          ".config/Code/User/keybindings.json",
+          ".config/Code - OSS/User/settings.json",
+          ".config/VSCodium/User/settings.json",
+          ".config/Cursor/User/settings.json",
+          ".config/i3/config",
+        ]);
+        const missing = p.missing.map((m) => m.path);
+        expect(missing).toContain(".config/sway");
+        expect(missing.some((m) => m.startsWith("Library/"))).toBe(false);
+        expect(missing.some((m) => m.startsWith("AppData/"))).toBe(false);
+        expect(missing).not.toContain(".hammerspoon");
+      });
+
+      it("win32 finds the AppData editor files and Windows tools only, with / paths", () => {
+        const p = plan({ platform: "win32", includeEnv: false });
+
+        expect(p.platform).toBe("win32");
+        expect(paths(p)).toEqual([
+          ".wezterm.lua",
+          "AppData/Roaming/Code/User/settings.json",
+          "AppData/Roaming/Cursor/User/snippets/ts.json",
+          "AppData/Local/nvim/init.lua",
+          "Documents/PowerShell/Microsoft.PowerShell_profile.ps1",
+          ".wslconfig",
+        ]);
+        expect(p.found.find((f) => f.path === ".wslconfig")?.category).toBe("Windows");
+        const missing = p.missing.map((m) => m.path);
+        expect(missing).toContain("AppData/Roaming/alacritty");
+        expect(missing.some((m) => m.startsWith("Library/"))).toBe(false);
+        expect(missing).not.toContain(".config/Code/User/settings.json");
+        expect(missing).not.toContain(".hammerspoon");
+        expect(missing).not.toContain(".config/i3");
+      });
+
+      it("treats an unknown platform as linux", () => {
+        expect(paths(plan({ platform: "freebsd", includeEnv: false }))).toEqual(
+          paths(plan({ platform: "linux", includeEnv: false }))
+        );
+      });
     });
 
     it("records the group, size and originating target of every file", () => {
@@ -272,37 +346,45 @@ describe("resolveTargets", () => {
       expect(p.missing.map((m) => m.path)).toContain(".netrc");
     });
 
-    it("never enters the top-level macOS user folders during the scan, only nested namesakes", () => {
-      const skipped = [
-        "Library",
-        "Desktop",
-        "Documents",
-        "Downloads",
-        "Movies",
-        "Music",
-        "Pictures",
-        "Public",
-      ];
+    it("never enters the top-level macOS, Linux and Windows user folders during the scan, only nested namesakes", () => {
+      const skipped = ENV_SCAN_SKIPPED_FOLDERS;
+      expect(skipped).toEqual(expect.arrayContaining(["Library", "AppData", "snap", "OneDrive"]));
       for (const folder of skipped) {
         createFile(home, `${folder}/.env`, "TOP=1");
         createFile(home, `${folder}/proj/.env`, "NESTED=1");
       }
       createFile(home, "Library/Application Support/Code/User/settings.json", "{}");
+      createFile(home, "AppData/Roaming/Code/User/settings.json", "{}");
       createFile(home, "projects/proj/.env", "PROJ=1");
       createFile(home, "work/Documents/.env", "DOCS=1");
       createFile(home, "work/Library/.env", "LIB=1");
+      createFile(home, "work/AppData/.env", "APP=1");
+      createFile(home, "work/snap/.env", "SNAP=1");
 
-      const found = paths(plan({ includeEnv: true }));
+      const inSkippedFolders = (found: string[]) =>
+        found.filter((path) =>
+          skipped.some((folder) => path.startsWith(`${folder}/`) && path.endsWith(".env"))
+        );
 
-      const inSkippedFolders = found.filter((path) =>
-        skipped.some((folder) => path.startsWith(`${folder}/`) && path.endsWith(".env"))
-      );
-      expect(inSkippedFolders).toEqual([]);
-      expect(found).toEqual(
-        expect.arrayContaining(["projects/proj/.env", "work/Documents/.env", "work/Library/.env"])
+      const darwin = paths(plan({ includeEnv: true, platform: "darwin" }));
+      expect(inSkippedFolders(darwin)).toEqual([]);
+      expect(darwin).toEqual(
+        expect.arrayContaining([
+          "projects/proj/.env",
+          "work/Documents/.env",
+          "work/Library/.env",
+          "work/AppData/.env",
+          "work/snap/.env",
+        ])
       );
       // Core targets under ~/Library come from the target walk, which the skip does not touch.
-      expect(found).toContain("Library/Application Support/Code/User/settings.json");
+      expect(darwin).toContain("Library/Application Support/Code/User/settings.json");
+
+      // Likewise AppData on Windows.
+      const win32 = paths(plan({ includeEnv: true, platform: "win32" }));
+      expect(inSkippedFolders(win32)).toEqual([]);
+      expect(win32).toContain("AppData/Roaming/Code/User/settings.json");
+      expect(win32).not.toContain("Library/Application Support/Code/User/settings.json");
     });
 
     it("does not descend into excluded directories during the scan", () => {

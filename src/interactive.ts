@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { posix } from "node:path";
 import { type CollectOptions, type CollectSummary, writePlan } from "./collect";
 import type { OutputFormat } from "./formats";
 import { resolveOptions } from "./options";
@@ -106,7 +106,7 @@ export async function runInteractive(
   prompter.note(formatNeverCopied(defaults.maxFileSizeMb), "Never copied");
 
   const envCount = full.files.filter(
-    (f) => f.group === "secrets" && isEnvFile(basename(f.path))
+    (f) => f.group === "secrets" && isEnvFile(posix.basename(f.path))
   ).length;
   const includeEnv = await prompter.confirm({
     message: `Include secret files? (.env files found by scan: ${envCount}, plus .npmrc/.netrc/.aws/credentials/.docker/config.json)`,

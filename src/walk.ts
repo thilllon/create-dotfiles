@@ -65,7 +65,15 @@ export function walk(
     return;
   }
 
-  const realPath = realpathSync(absPath);
+  let realPath: string;
+  try {
+    realPath = realpathSync(absPath);
+  } catch (err) {
+    // A directory whose real path cannot be resolved (a reparse point the process may not
+    // follow, EPERM on Windows) is reported like any other unreadable entry.
+    handlers.onError(relPath, err as Error);
+    return;
+  }
   if (seen.has(realPath)) {
     handlers.onError(relPath, new Error(`symlink loop detected at ${relPath}`));
     return;

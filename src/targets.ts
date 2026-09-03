@@ -1,5 +1,8 @@
 export type TargetGroup = "core" | "secrets" | "config-all" | "custom";
 
+/** The platforms with their own default targets; anything else is treated as `linux`. */
+export type TargetPlatform = "darwin" | "linux" | "win32";
+
 export interface TargetSpec {
   /** Path relative to the home directory, with `/` separators. */
   path: string;
@@ -16,7 +19,7 @@ export interface TargetCategory {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Default targets, by category
+// Default targets shared by every platform
 // ---------------------------------------------------------------------------------------------
 
 export const SHELL_TARGETS: readonly string[] = [
@@ -42,25 +45,10 @@ export const EDITOR_TARGETS: readonly string[] = [
   ".editorconfig",
 ];
 
-/** VS Code and Cursor keep the same three user files under `<base>/User/`. */
-export const EDITOR_USER_FILES: readonly string[] = [
-  "settings.json",
-  "keybindings.json",
-  "snippets",
-];
-
-/** Where VS Code keeps its `User/` directory: macOS, then Linux. */
-export const VSCODE_USER_DIRS: readonly string[] = [
-  "Library/Application Support/Code",
-  ".config/Code",
-];
-
-/** Where Cursor keeps its `User/` directory: macOS, then Linux. */
-export const CURSOR_USER_DIRS: readonly string[] = [
-  "Library/Application Support/Cursor",
-  ".config/Cursor",
-];
-
+/**
+ * Terminal emulators and multiplexers. The `.config/...` variants stay on every platform:
+ * wezterm and alacritty read them on Windows too, and `.wezterm.lua` is honoured everywhere.
+ */
 export const TERMINAL_TARGETS: readonly string[] = [
   ".tmux.conf",
   ".config/tmux",
@@ -68,6 +56,7 @@ export const TERMINAL_TARGETS: readonly string[] = [
   ".config/alacritty",
   ".config/kitty",
   ".config/wezterm",
+  ".wezterm.lua",
   ".config/ghostty",
   ".config/fish",
   ".config/zellij",
@@ -80,15 +69,6 @@ export const TOOL_TARGETS: readonly string[] = [
   ".config/htop",
   ".config/bat",
   ".config/lazygit",
-];
-
-export const MACOS_TARGETS: readonly string[] = [
-  ".hammerspoon",
-  ".config/karabiner",
-  ".skhdrc",
-  ".yabairc",
-  ".Brewfile",
-  "Brewfile",
 ];
 
 /** The non-secret parts of the secret-adjacent tools; the keys themselves are never copied. */
@@ -108,34 +88,145 @@ export const SECRET_TARGETS: readonly string[] = [
   ".docker/config.json",
 ];
 
+// ---------------------------------------------------------------------------------------------
+// Per-platform default targets
+// ---------------------------------------------------------------------------------------------
+
+/** VS Code, Cursor and their forks keep the same three user files under `<base>/User/`. */
+export const EDITOR_USER_FILES: readonly string[] = [
+  "settings.json",
+  "keybindings.json",
+  "snippets",
+];
+
 /** `<base>/User/settings.json` and friends for every listed base directory. */
-function editorUserFiles(bases: readonly string[]): string[] {
+function editorUserFiles(...bases: readonly string[]): string[] {
   return bases.flatMap((base) => EDITOR_USER_FILES.map((file) => `${base}/User/${file}`));
 }
 
-/** The default list, in the order targets are attempted and reported. */
-export const TARGET_CATEGORIES: readonly TargetCategory[] = [
+export const DARWIN_VSCODE_USER_DIRS: readonly string[] = ["Library/Application Support/Code"];
+export const DARWIN_CURSOR_USER_DIRS: readonly string[] = ["Library/Application Support/Cursor"];
+export const DARWIN_TARGETS: readonly string[] = [
+  ".hammerspoon",
+  ".config/karabiner",
+  ".skhdrc",
+  ".yabairc",
+  ".Brewfile",
+  "Brewfile",
+];
+
+export const LINUX_VSCODE_USER_DIRS: readonly string[] = [
+  ".config/Code",
+  ".config/Code - OSS",
+  ".config/VSCodium",
+];
+export const LINUX_CURSOR_USER_DIRS: readonly string[] = [".config/Cursor"];
+export const LINUX_TARGETS: readonly string[] = [
+  ".bash_logout",
+  ".xinitrc",
+  ".xprofile",
+  ".Xresources",
+  ".config/i3",
+  ".config/sway",
+  ".config/hypr",
+  ".config/waybar",
+  ".config/rofi",
+  ".config/dunst",
+  ".config/picom",
+  ".config/polybar",
+  ".config/gtk-3.0/settings.ini",
+  ".config/fontconfig",
+];
+
+/** Windows paths are relative to `%USERPROFILE%`, written with `/` like every other target. */
+export const WIN32_VSCODE_USER_DIRS: readonly string[] = ["AppData/Roaming/Code"];
+export const WIN32_CURSOR_USER_DIRS: readonly string[] = ["AppData/Roaming/Cursor"];
+export const WIN32_TARGETS: readonly string[] = [
+  "AppData/Local/nvim",
+  "AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json",
+  "Documents/PowerShell/Microsoft.PowerShell_profile.ps1",
+  "Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1",
+  "AppData/Roaming/alacritty",
+  ".wslconfig",
+];
+
+/** The categories every platform attempts, in the order targets are attempted and reported. */
+export const COMMON_TARGET_CATEGORIES: readonly TargetCategory[] = [
   { category: "Shell", group: "core", paths: SHELL_TARGETS },
   { category: "Git", group: "core", paths: GIT_TARGETS },
   { category: "Editors", group: "core", paths: EDITOR_TARGETS },
-  { category: "VS Code", group: "core", paths: editorUserFiles(VSCODE_USER_DIRS) },
-  { category: "Cursor", group: "core", paths: editorUserFiles(CURSOR_USER_DIRS) },
   { category: "Terminal", group: "core", paths: TERMINAL_TARGETS },
   { category: "Tools", group: "core", paths: TOOL_TARGETS },
-  { category: "macOS", group: "core", paths: MACOS_TARGETS },
   { category: "SSH / GPG / AWS", group: "core", paths: SSH_GPG_AWS_TARGETS },
+];
+
+export const SECRET_TARGET_CATEGORIES: readonly TargetCategory[] = [
   { category: "Secrets", group: "secrets", paths: SECRET_TARGETS },
 ];
+
+/** The categories added for one platform only; they never show up as "Not found" elsewhere. */
+export const PLATFORM_TARGET_CATEGORIES: Readonly<
+  Record<TargetPlatform, readonly TargetCategory[]>
+> = {
+  darwin: [
+    { category: "VS Code", group: "core", paths: editorUserFiles(...DARWIN_VSCODE_USER_DIRS) },
+    { category: "Cursor", group: "core", paths: editorUserFiles(...DARWIN_CURSOR_USER_DIRS) },
+    { category: "macOS", group: "core", paths: DARWIN_TARGETS },
+  ],
+  linux: [
+    { category: "VS Code", group: "core", paths: editorUserFiles(...LINUX_VSCODE_USER_DIRS) },
+    { category: "Cursor", group: "core", paths: editorUserFiles(...LINUX_CURSOR_USER_DIRS) },
+    { category: "Linux", group: "core", paths: LINUX_TARGETS },
+  ],
+  win32: [
+    { category: "VS Code", group: "core", paths: editorUserFiles(...WIN32_VSCODE_USER_DIRS) },
+    { category: "Cursor", group: "core", paths: editorUserFiles(...WIN32_CURSOR_USER_DIRS) },
+    { category: "Windows", group: "core", paths: WIN32_TARGETS },
+  ],
+};
 
 function toSpecs({ category, group, paths }: TargetCategory): TargetSpec[] {
   return paths.map((path) => ({ path, group, category }));
 }
 
+/** Maps a `process.platform` value onto the platforms with their own targets. */
+export function resolveTargetPlatform(platform: string = process.platform): TargetPlatform {
+  if (platform === "darwin" || platform === "win32") return platform;
+  return "linux";
+}
+
+/** The targets shared by every platform: the common categories plus the secrets group. */
+export const COMMON_TARGETS: readonly TargetSpec[] = [
+  ...COMMON_TARGET_CATEGORIES,
+  ...SECRET_TARGET_CATEGORIES,
+].flatMap(toSpecs);
+
+function targetsForPlatform(platform: TargetPlatform): TargetSpec[] {
+  return [
+    ...COMMON_TARGET_CATEGORIES,
+    ...PLATFORM_TARGET_CATEGORIES[platform],
+    ...SECRET_TARGET_CATEGORIES,
+  ].flatMap(toSpecs);
+}
+
+/** The full default list per platform: common first, then platform-specific, then secrets. */
+export const PLATFORM_TARGETS: Readonly<Record<TargetPlatform, readonly TargetSpec[]>> = {
+  darwin: targetsForPlatform("darwin"),
+  linux: targetsForPlatform("linux"),
+  win32: targetsForPlatform("win32"),
+};
+
 /**
- * What gets collected. `core` entries are always attempted; `secrets` entries only with
- * `includeEnv`. Entries that do not exist on the machine are skipped.
+ * What gets collected on a platform (`process.platform` or one of {@link TargetPlatform}).
+ * `core` entries are always attempted; `secrets` entries only with `includeEnv`. Entries that
+ * do not exist on the machine are skipped.
  */
-export const DEFAULT_TARGETS: readonly TargetSpec[] = TARGET_CATEGORIES.flatMap(toSpecs);
+export function targetsFor(platform: string = process.platform): readonly TargetSpec[] {
+  return PLATFORM_TARGETS[resolveTargetPlatform(platform)];
+}
+
+/** The default targets of the platform this process runs on. */
+export const DEFAULT_TARGETS: readonly TargetSpec[] = targetsFor();
 
 // ---------------------------------------------------------------------------------------------
 // Never-copied rules
@@ -205,10 +296,14 @@ export const ENV_SCAN_MAX_DEPTH = 4;
 
 /**
  * Top-level home folders the `.env` scan never enters (the scan only: core targets such as the
- * VS Code settings under `~/Library` are still collected). On macOS, merely listing these
- * triggers the "Terminal would like to access your Documents folder" permission prompts.
+ * VS Code settings under `~/Library` or `AppData` are still collected). On macOS, merely
+ * listing the user folders triggers the "Terminal would like to access your Documents folder"
+ * permission prompts; on Windows, `AppData` is enormous and the legacy junctions
+ * (`Application Data`, `Local Settings`) fail with EPERM; `OneDrive` may be cloud-only.
+ * One flat list keeps the scan identical on every platform.
  */
 export const ENV_SCAN_SKIPPED_FOLDERS: readonly string[] = [
+  // macOS (and the XDG user directories that share these names on Linux)
   "Library",
   "Desktop",
   "Documents",
@@ -217,6 +312,21 @@ export const ENV_SCAN_SKIPPED_FOLDERS: readonly string[] = [
   "Music",
   "Pictures",
   "Public",
+  // Linux
+  "Videos",
+  "Templates",
+  "snap",
+  // Windows
+  "AppData",
+  "Application Data",
+  "Local Settings",
+  "OneDrive",
+  "Contacts",
+  "Favorites",
+  "Links",
+  "Saved Games",
+  "Searches",
+  "3D Objects",
 ];
 
 /** `.env` itself and `.env.<anything>`. */
@@ -224,11 +334,18 @@ export const ENV_FILE_NAME = ".env";
 export const ENV_FILE_PREFIX = ".env.";
 
 // ---------------------------------------------------------------------------------------------
-// User exclude normalisation
+// Path normalisation used by the rules
 // ---------------------------------------------------------------------------------------------
 
+/** Paths are `/`-separated internally; a stray `\` (a Windows spelling) is treated the same. */
+const PATH_SEPARATORS = /[\\/]/;
+const BACKSLASH = /\\/g;
 const LEADING_DOT_SLASH = /^\.\//;
 const TRAILING_SLASHES = /\/+$/;
+
+function segmentsOf(relPath: string): string[] {
+  return relPath.split(PATH_SEPARATORS);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Rules
@@ -270,7 +387,7 @@ function isMacOsCachePath(segments: readonly string[]): boolean {
 
 /** The excludes that apply to everything, including opted-in groups and config includes. */
 export function isHardExcluded(relPath: string): boolean {
-  const segments = relPath.split("/");
+  const segments = segmentsOf(relPath);
 
   if (segments.some((s) => HARD_EXCLUDED.has(s) || COLLECTION_ARTIFACT_PATTERN.test(s))) {
     return true;
@@ -282,7 +399,7 @@ export function isHardExcluded(relPath: string): boolean {
 
 /**
  * User excludes from `~/.dotfilesrc.toml`: a bare name matches any path segment, an entry
- * containing `/` matches that home-relative path and everything under it.
+ * containing a separator matches that home-relative path and everything under it.
  */
 export interface ExcludeRules {
   readonly names: ReadonlySet<string>;
@@ -294,7 +411,10 @@ export function compileExcludes(entries: readonly string[]): ExcludeRules {
   const paths: string[] = [];
 
   for (const raw of entries) {
-    const entry = raw.replace(LEADING_DOT_SLASH, "").replace(TRAILING_SLASHES, "");
+    const entry = raw
+      .replace(BACKSLASH, "/")
+      .replace(LEADING_DOT_SLASH, "")
+      .replace(TRAILING_SLASHES, "");
     if (entry.includes("/")) {
       paths.push(entry);
     } else {
@@ -309,6 +429,8 @@ export function isExcluded(relPath: string, rules?: ExcludeRules): boolean {
   if (isHardExcluded(relPath)) return true;
   if (rules === undefined) return false;
 
-  if (relPath.split("/").some((segment) => rules.names.has(segment))) return true;
-  return rules.paths.some((prefix) => relPath === prefix || relPath.startsWith(`${prefix}/`));
+  const segments = segmentsOf(relPath);
+  if (segments.some((segment) => rules.names.has(segment))) return true;
+  const posixPath = segments.join("/");
+  return rules.paths.some((prefix) => posixPath === prefix || posixPath.startsWith(`${prefix}/`));
 }

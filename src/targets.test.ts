@@ -1,26 +1,48 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMMON_TARGET_CATEGORIES,
+  COMMON_TARGETS,
   compileExcludes,
   DEFAULT_TARGETS,
+  EDITOR_USER_FILES,
+  ENV_SCAN_SKIPPED_FOLDERS,
   HARD_EXCLUDED_DIR_NAMES,
   isEnvFile,
   isExcluded,
   isHardExcluded,
+  PLATFORM_TARGET_CATEGORIES,
+  PLATFORM_TARGETS,
+  resolveTargetPlatform,
+  type TargetPlatform,
+  type TargetSpec,
+  targetsFor,
 } from "./targets";
 
-describe("DEFAULT_TARGETS", () => {
-  const paths = DEFAULT_TARGETS.map((t) => t.path);
+const PLATFORMS: TargetPlatform[] = ["darwin", "linux", "win32"];
+const pathsOf = (specs: readonly TargetSpec[]) => specs.map((t) => t.path);
 
-  it("lists VS Code and Cursor user files at both the macOS and Linux paths", () => {
-    for (const editor of ["Code", "Cursor"]) {
-      for (const file of ["settings.json", "keybindings.json", "snippets"]) {
-        expect(paths).toContain(`Library/Application Support/${editor}/User/${file}`);
-        expect(paths).toContain(`.config/${editor}/User/${file}`);
-      }
+describe("targetsFor", () => {
+  it("maps process.platform values onto darwin, linux and win32, defaulting to linux", () => {
+    expect(resolveTargetPlatform("darwin")).toBe("darwin");
+    expect(resolveTargetPlatform("win32")).toBe("win32");
+    expect(resolveTargetPlatform("linux")).toBe("linux");
+    for (const other of ["freebsd", "openbsd", "sunos", "aix", "android", "haiku", ""]) {
+      expect(resolveTargetPlatform(other)).toBe("linux");
     }
+    expect(resolveTargetPlatform()).toBe(resolveTargetPlatform(process.platform));
   });
 
-  it("covers the shell, git, editor, terminal, tool and macOS targets", () => {
+  it("DEFAULT_TARGETS is the list for the platform this process runs on", () => {
+    expect(DEFAULT_TARGETS).toBe(targetsFor(process.platform));
+    expect(targetsFor()).toBe(DEFAULT_TARGETS);
+    expect(targetsFor("plan9")).toBe(PLATFORM_TARGETS.linux);
+  });
+
+  it.each(PLATFORMS)("%s: contains every common target and the secrets group", (platform) => {
+    const paths = pathsOf(targetsFor(platform));
+    for (const spec of COMMON_TARGETS) {
+      expect(targetsFor(platform)).toContainEqual(spec);
+    }
     for (const path of [
       ".zshrc",
       ".zshenv",
@@ -35,46 +57,187 @@ describe("DEFAULT_TARGETS", () => {
       ".vimrc",
       ".ideavimrc",
       ".config/nvim",
+      ".editorconfig",
       ".tmux.conf",
       ".config/tmux",
       ".config/starship.toml",
       ".config/alacritty",
       ".config/kitty",
       ".config/wezterm",
+      ".wezterm.lua",
       ".config/ghostty",
       ".config/fish",
+      ".config/zellij",
       ".config/mise",
       ".tool-versions",
-      ".editorconfig",
       ".config/gh/config.yml",
       ".config/htop",
       ".config/bat",
       ".config/lazygit",
-      ".config/zellij",
+      ".ssh/config",
+      ".gnupg/gpg.conf",
+      ".gnupg/gpg-agent.conf",
+      ".aws/config",
+    ]) {
+      expect(targetsFor(platform).find((t) => t.path === path)?.group).toBe("core");
+    }
+    for (const path of [".npmrc", ".yarnrc", ".netrc", ".aws/credentials", ".docker/config.json"]) {
+      expect(targetsFor(platform).find((t) => t.path === path)?.group).toBe("secrets");
+    }
+    expect(paths.length).toBeGreaterThan(COMMON_TARGETS.length);
+  });
+
+  it.each(PLATFORMS)(
+    "%s: has no duplicate paths, a category on every entry, / separators",
+    (platform) => {
+      const paths = pathsOf(targetsFor(platform));
+      expect(new Set(paths).size).toBe(paths.length);
+      expect(targetsFor(platform).every((t) => t.category.length > 0)).toBe(true);
+      expect(paths.filter((p) => p.includes("\\") || p.startsWith("/") || p.endsWith("/"))).toEqual(
+        []
+      );
+    }
+  );
+
+  it("darwin lists the Library editor paths and the macOS tools, and nothing from Linux or Windows", () => {
+    const paths = pathsOf(targetsFor("darwin"));
+    for (const editor of ["Code", "Cursor"]) {
+      for (const file of EDITOR_USER_FILES) {
+        expect(paths).toContain(`Library/Application Support/${editor}/User/${file}`);
+        expect(paths).not.toContain(`.config/${editor}/User/${file}`);
+        expect(paths).not.toContain(`AppData/Roaming/${editor}/User/${file}`);
+      }
+    }
+    for (const path of [
       ".hammerspoon",
       ".config/karabiner",
       ".skhdrc",
       ".yabairc",
       ".Brewfile",
       "Brewfile",
-      ".ssh/config",
-      ".gnupg/gpg.conf",
-      ".gnupg/gpg-agent.conf",
-      ".aws/config",
     ]) {
-      expect(DEFAULT_TARGETS.find((t) => t.path === path)?.group).toBe("core");
+      expect(targetsFor("darwin").find((t) => t.path === path)).toMatchObject({
+        group: "core",
+        category: "macOS",
+      });
     }
+    expect(paths.some((p) => p.startsWith("AppData/"))).toBe(false);
+    expect(paths).not.toContain(".config/i3");
+    expect(paths).not.toContain(".wslconfig");
   });
 
-  it("puts credential files in the secrets group, never in core", () => {
-    for (const path of [".npmrc", ".yarnrc", ".netrc", ".aws/credentials", ".docker/config.json"]) {
-      expect(DEFAULT_TARGETS.find((t) => t.path === path)?.group).toBe("secrets");
+  it("linux lists the .config editor paths (Code, Code - OSS, VSCodium, Cursor) and the desktop tools, nothing from macOS or Windows", () => {
+    const paths = pathsOf(targetsFor("linux"));
+    for (const base of [
+      ".config/Code",
+      ".config/Code - OSS",
+      ".config/VSCodium",
+      ".config/Cursor",
+    ]) {
+      for (const file of EDITOR_USER_FILES) expect(paths).toContain(`${base}/User/${file}`);
     }
+    for (const path of [
+      ".bash_logout",
+      ".xinitrc",
+      ".xprofile",
+      ".Xresources",
+      ".config/i3",
+      ".config/sway",
+      ".config/hypr",
+      ".config/waybar",
+      ".config/rofi",
+      ".config/dunst",
+      ".config/picom",
+      ".config/polybar",
+      ".config/gtk-3.0/settings.ini",
+      ".config/fontconfig",
+    ]) {
+      expect(targetsFor("linux").find((t) => t.path === path)).toMatchObject({
+        group: "core",
+        category: "Linux",
+      });
+    }
+    expect(paths.some((p) => p.startsWith("Library/"))).toBe(false);
+    expect(paths.some((p) => p.startsWith("AppData/"))).toBe(false);
+    expect(paths).not.toContain(".hammerspoon");
+    expect(paths).not.toContain(".wslconfig");
   });
 
-  it("has no duplicate paths and a category on every entry", () => {
-    expect(new Set(paths).size).toBe(paths.length);
-    expect(DEFAULT_TARGETS.every((t) => t.category.length > 0)).toBe(true);
+  it("win32 lists the AppData editor paths and the Windows tools with / separators, nothing from macOS or Linux", () => {
+    const paths = pathsOf(targetsFor("win32"));
+    for (const editor of ["Code", "Cursor"]) {
+      for (const file of EDITOR_USER_FILES) {
+        expect(paths).toContain(`AppData/Roaming/${editor}/User/${file}`);
+      }
+    }
+    for (const path of [
+      "AppData/Local/nvim",
+      "AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json",
+      "Documents/PowerShell/Microsoft.PowerShell_profile.ps1",
+      "Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1",
+      "AppData/Roaming/alacritty",
+      ".wslconfig",
+    ]) {
+      expect(targetsFor("win32").find((t) => t.path === path)).toMatchObject({
+        group: "core",
+        category: "Windows",
+      });
+    }
+    // Neovim's XDG location and the .config terminal emulator files are read on Windows too.
+    expect(paths).toContain(".config/nvim");
+    expect(paths).toContain(".config/wezterm");
+    expect(paths).toContain(".wezterm.lua");
+    expect(paths.some((p) => p.startsWith("Library/"))).toBe(false);
+    expect(paths).not.toContain(".config/Code/User/settings.json");
+    expect(paths).not.toContain(".hammerspoon");
+    expect(paths).not.toContain(".config/i3");
+  });
+
+  it("attempts common targets first, then the platform's own, then secrets", () => {
+    for (const platform of PLATFORMS) {
+      const categories = [...new Set(targetsFor(platform).map((t) => t.category))];
+      expect(categories.slice(0, COMMON_TARGET_CATEGORIES.length)).toEqual(
+        COMMON_TARGET_CATEGORIES.map((c) => c.category)
+      );
+      expect(categories.at(-1)).toBe("Secrets");
+      expect(categories).toEqual(
+        expect.arrayContaining(PLATFORM_TARGET_CATEGORIES[platform].map((c) => c.category))
+      );
+    }
+  });
+});
+
+describe("ENV_SCAN_SKIPPED_FOLDERS", () => {
+  it("covers the macOS user folders, the Linux XDG folders and snap, and the Windows profile folders", () => {
+    expect(ENV_SCAN_SKIPPED_FOLDERS).toEqual(
+      expect.arrayContaining([
+        "Library",
+        "Desktop",
+        "Documents",
+        "Downloads",
+        "Movies",
+        "Music",
+        "Pictures",
+        "Public",
+        "Videos",
+        "Templates",
+        "snap",
+        "AppData",
+        "Application Data",
+        "Local Settings",
+        "OneDrive",
+        "Contacts",
+        "Favorites",
+        "Links",
+        "Saved Games",
+        "Searches",
+        "3D Objects",
+      ])
+    );
+    expect(new Set(ENV_SCAN_SKIPPED_FOLDERS).size).toBe(ENV_SCAN_SKIPPED_FOLDERS.length);
+    // Case-only duplicates would collide on macOS and Windows file systems.
+    const lower = ENV_SCAN_SKIPPED_FOLDERS.map((name) => name.toLowerCase());
+    expect(new Set(lower).size).toBe(lower.length);
   });
 });
 
@@ -218,5 +381,19 @@ describe("isExcluded with user rules", () => {
   it("applies only the hard excludes without rules", () => {
     expect(isExcluded(".zshrc")).toBe(false);
     expect(isExcluded(".cache/x")).toBe(true);
+  });
+
+  it("matches by segment whichever separator the path or the rule was written with", () => {
+    const rules = compileExcludes([".config\\app\\tmp", "secret", "./work\\"]);
+    expect(rules.paths).toEqual([".config/app/tmp"]);
+    expect(rules.names.has("secret")).toBe(true);
+    expect(rules.names.has("work")).toBe(true);
+    expect(isExcluded(".config/app/tmp/x", rules)).toBe(true);
+    expect(isExcluded(".config\\app\\tmp\\x", rules)).toBe(true);
+    expect(isExcluded("a\\secret\\b", rules)).toBe(true);
+    expect(isExcluded(".config/app/tmp-other/x", rules)).toBe(false);
+    expect(isHardExcluded("projects\\app\\node_modules\\x")).toBe(true);
+    expect(isHardExcluded(".ssh\\id_rsa")).toBe(true);
+    expect(isHardExcluded("Library\\Caches\\x")).toBe(true);
   });
 });
