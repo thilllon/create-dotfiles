@@ -8,14 +8,24 @@ on:
 
 jobs:
   ci:
-    runs-on: ['ubuntu-latest']
+    runs-on: ${{ matrix.os }}
     env:
       # Git hooks are for developers; CI runs the same checks as explicit steps.
       LEFTHOOK: 0
     strategy:
+      # One red OS or Node version must not hide the others' results.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         # Node 20 is EOL and excluded by tsdown 0.22, release-it 21 and pnpm 11.
         node-version: [22, 24, 26]
+        # The pinned Node once each on Windows and macOS: paths, symlinks/junctions, file locks
+        # and case-insensitive file systems are what differ there, not the Node version.
+        include:
+          - os: windows-latest
+            node-version: 24
+          - os: macos-latest
+            node-version: 24
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
@@ -24,7 +34,12 @@ jobs:
         env:
           MISE_NODE_VERSION: ${{ matrix.node-version }}
       - run: pnpm install --frozen-lockfile
+        shell: bash
       - run: pnpm lint
+        shell: bash
       - run: pnpm typecheck
+        shell: bash
       - run: pnpm test:coverage
+        shell: bash
       - run: pnpm build
+        shell: bash
