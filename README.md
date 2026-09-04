@@ -13,9 +13,64 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/thilllon/create-dotfiles" alt="License" /></a>
 </p>
 
-<p align="center">
-  <code>npx create-dotfiles</code>
-</p>
+## Quickstart
+
+Nothing to install and no config file to write. In a terminal it walks you through what it found;
+with `--auto` it just runs.
+
+```shell
+npx create-dotfiles           # interactive
+npx create-dotfiles --auto    # no prompts, defaults
+```
+
+Not sure what it would take from your home directory? Ask first. This writes nothing:
+
+```console
+$ npx create-dotfiles --auto --dry-run
+Would copy 8 files (225 B) from /Users/you
+  .zshrc (37 B) [core]
+  .gitconfig (46 B) [core]
+  .config/nvim/init.lua (10 B) [core]
+  .config/nvim/lua/plugins.lua (11 B) [core]
+  .tmux.conf (16 B) [core]
+  .ssh/config (27 B) [core]
+  .npmrc (40 B) [secrets]
+  work/api/.env (38 B) [secrets]
+Per group: core 6, custom 0, secrets 2, config-all 0
+Not found (59): .zshenv, .zprofile, .bashrc, ...
+Would write:
+  folder: /Users/you/dotfiles-20260904-083845/
+Dry run: nothing was written.
+```
+
+Drop `--dry-run` and that plan becomes `~/dotfiles-20260904-083845/`, every file at its path
+relative to your home directory. `~/.config/nvim` was a symlink on this machine and came through as
+real files, so the collection stands on its own. Add `--format folder,zip,tar` for archives of the
+same tree beside it.
+
+**Secrets come along by default.** `.env` files found by a bounded scan, plus `.npmrc`, `.yarnrc`,
+`.netrc`, `.aws/credentials` and `.docker/config.json`. Pass `--no-include-env` to leave them out.
+SSH and GPG private keys are never copied either way.
+
+On the other machine, put it back:
+
+```console
+$ npx create-dotfiles restore
+Restoring /Users/you/dotfiles-20260904-083845 into /Users/you
+  [OK] .config/nvim/init.lua
+  [OK] .config/nvim/lua/plugins.lua
+  [OK] .gitconfig
+  ...
+Restored 8 files, 0 skipped, 0 failed.
+```
+
+`restore` takes the newest collection folder and never overwrites a file that is already there; run
+it twice and the second run reports `[SKIP] .zshrc exists (use --force)`. Extract a zip or tar.gz
+first, since restore reads a folder.
+
+Next: [See it in action](#see-it-in-action) for the interactive flow, [Flags](#flags) for every
+option, and [What gets collected](#what-gets-collected) for the full target list and the
+never-copied rules.
 
 ## See it in action
 
