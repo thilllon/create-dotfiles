@@ -3,20 +3,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClackPrompter } from "./clack-prompter";
 import { CANCEL } from "./interactive";
 
-const CLACK_CANCEL = Symbol("clack-cancel");
-
-vi.mock("@clack/prompts", () => ({
-  intro: vi.fn(),
-  outro: vi.fn(),
-  cancel: vi.fn(),
-  note: vi.fn(),
-  confirm: vi.fn(),
-  multiselect: vi.fn(),
-  spinner: vi.fn(),
-  isCancel: (value: unknown) => typeof value === "symbol",
-}));
+// The prompts are mocked, but clack's cancel value and its check are the real ones, so the
+// adapter is tested against how clack actually signals a cancelled prompt.
+vi.mock("@clack/prompts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@clack/prompts")>();
+  return {
+    CANCEL_SYMBOL: actual.CANCEL_SYMBOL,
+    isCancel: actual.isCancel,
+    intro: vi.fn(),
+    outro: vi.fn(),
+    cancel: vi.fn(),
+    note: vi.fn(),
+    confirm: vi.fn(),
+    multiselect: vi.fn(),
+    spinner: vi.fn(),
+  };
+});
 
 const mocked = vi.mocked(clack);
+// Annotated so the value keeps its `unique symbol` type; inferred, it widens to `symbol` where it
+// meets multiselect's generic return type.
+const CLACK_CANCEL: typeof clack.CANCEL_SYMBOL = clack.CANCEL_SYMBOL;
 
 describe("createClackPrompter", () => {
   beforeEach(() => {
