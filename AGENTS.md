@@ -9,7 +9,8 @@ when piped, or in CI it runs with defaults. Secrets (`.env` files found by a bou
 `.netrc`, `.aws/credentials`, `.docker/config.json`) are included by default and can be left out with
 `--no-include-env`; SSH and GPG private keys are never
 copied. `restore` copies a collection back without overwriting unless `--force`. The same code is
-published as a typed library (`dist/index.cjs` + `dist/index.d.cts`).
+published as a typed library (`dist/index.cjs` + `dist/index.d.cts`). It is distributed on npm and,
+following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI and releases").
 
 ## Tech Stack
 
@@ -116,6 +117,26 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   package gets a new patch version with no human involved. Major bumps stay open for review.
 - `release.yml` declares `concurrency: release`, so two dispatches queue instead of racing for the
   same version.
+- **Homebrew** (`brew install thilllon/tap/create-dotfiles`): the formula lives in
+  [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap), and nothing in this repository
+  pushes to it. The tap's `bump.yml` polls npm every three hours; for a newer version it verifies
+  the tarball's npm provenance (signed by this repository's `release.yml` running on `main`),
+  rewrites `url`/`sha256`, runs `brew style`, `brew audit --strict --online`,
+  `brew install --build-from-source` and `brew test` on macOS and Linux, and only then commits.
+  A release therefore needs no Homebrew step here. GitHub disables scheduled workflows in a public
+  repository after 60 days without activity. Bump commits are activity, so this happens only after
+  a long release drought (past gaps between releases were 192 and 489 days). If it happens,
+  `release.yml`'s `homebrew` job fails and opens an issue here that mentions the owner, with the
+  fix: `gh workflow enable bump.yml -R thilllon/homebrew-tap && gh workflow run bump.yml -R
+  thilllon/homebrew-tap`. The issue is what reaches a human: a release dispatched by
+  `dependabot-auto-release.yml` runs as github-actions[bot], so its failure alone notifies nobody.
+  The tap uses no keepalive trick, because GitHub has disabled a keepalive action for bypassing
+  that policy.
+- The tap's provenance check pins the publisher. Renaming `release.yml` requires updating
+  `SOURCE_WORKFLOW` in the tap's `bump.yml`. Publishing from a branch other than `main` requires
+  updating its `SOURCE_REF`. The formula's `test do` block runs the built CLI, so a change that
+  breaks `--version`, `--auto --format folder,zip` or `restore` blocks the Homebrew update until
+  the formula's test is adjusted in a tap PR.
 
 ## Architecture Notes
 
