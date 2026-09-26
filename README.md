@@ -23,6 +23,9 @@ npx create-dotfiles           # interactive
 npx create-dotfiles --auto    # no prompts, defaults
 ```
 
+Rather have it on your `PATH`? [Install it](#install) with Homebrew or npm and run
+`create-dotfiles` instead of `npx create-dotfiles`.
+
 Not sure what it would take from your home directory? Ask first. This writes nothing:
 
 ```console
@@ -71,6 +74,87 @@ first, since restore reads a folder.
 Next: [See it in action](#see-it-in-action) for the interactive flow, [Flags](#flags) for every
 option, and [What gets collected](#what-gets-collected) for the full target list and the
 never-copied rules.
+
+## Install
+
+Three ways to run it. They are the same program; pick by how you like your tools delivered.
+
+| | Command afterwards | Updates | Needs |
+| --- | --- | --- | --- |
+| [Homebrew](#homebrew) (macOS, Linux) | `create-dotfiles` | `brew upgrade create-dotfiles` | Homebrew (it brings its own Node) |
+| [npm](#npm) | `create-dotfiles` | `npm i -g create-dotfiles` again | Node 22 or newer |
+| [npx](#no-install-npx), no install | `npx create-dotfiles` | automatic (`@latest` to be sure) | Node 22 or newer |
+
+### Homebrew
+
+Tap and trust once per machine, then install by name:
+
+```shell
+brew tap thilllon/tap
+brew trust thilllon/tap
+brew install create-dotfiles
+```
+
+Homebrew 6 and later load formulae only from taps you trust, which is what `brew trust` is for; a
+tap that is not trusted refuses `brew install create-dotfiles`. `brew install
+thilllon/tap/create-dotfiles` does all three steps in one command, trusting just this formula. The
+formula lives in [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap). It installs
+Homebrew's `node` as a dependency and builds in a few seconds, with the developer tools Homebrew
+already relies on.
+
+Then use the `create-dotfiles` command. Everything in this README written as
+`npx create-dotfiles …` works the same as `create-dotfiles …`:
+
+```shell
+create-dotfiles                              # interactive
+create-dotfiles --auto                       # no prompts, defaults
+create-dotfiles --auto --dry-run             # show the plan, write nothing
+create-dotfiles --format zip --encrypt-zip   # password-protected zip
+create-dotfiles restore                      # put the newest collection back
+create-dotfiles --help                       # every flag and rule
+create-dotfiles --version
+```
+
+New releases reach the tap within a few hours of npm. `brew upgrade` checks for them once a day
+on its own; to get one right away:
+
+```shell
+brew update && brew upgrade create-dotfiles
+```
+
+To remove it (the last two lines are only needed if you want the tap gone too):
+
+```shell
+brew uninstall create-dotfiles
+brew untap thilllon/tap
+brew untrust thilllon/tap
+```
+
+In a `Brewfile`, `trusted: true` does the `brew trust` step for you:
+
+```ruby
+tap "thilllon/tap", trusted: true
+brew "create-dotfiles"
+```
+
+### npm
+
+```shell
+npm i -g create-dotfiles
+create-dotfiles --version
+```
+
+Node 22 or newer. Run the install again to update. pnpm (`pnpm add -g create-dotfiles`, after
+`pnpm setup`) works too, but pnpm 11 installs a release only once it is a day old. So does Yarn 1
+(`yarn global add create-dotfiles`); Yarn 2 and later have no global installs.
+
+### No install (npx)
+
+`npx create-dotfiles` runs it without installing anything but Node 22 or newer, and picks up a
+newer release on its own. If create-dotfiles is also installed (with Homebrew, `npm i -g`, or in
+the current project), npx runs that copy instead, even an older one; `npx create-dotfiles@latest`
+always gets the newest release. Quickstart and the transcripts in this README use this form; with
+Homebrew or npm, drop the `npx`.
 
 ## See it in action
 
@@ -130,35 +214,15 @@ home-relative path, so the folder is a faithful mirror and the archives restore 
 
 ## Usage
 
-```shell
-npx create-dotfiles                 # interactive
-npx create-dotfiles --auto          # defaults: core targets + secrets, folder output
-npx create-dotfiles --dry-run       # show the plan, write nothing
-npx create-dotfiles restore         # put the newest collection back (never overwrites)
-```
-
-Or install it with Homebrew (macOS or Linux; brings its own Node). Tap and trust once per machine:
+The examples below use the installed command ([Install](#install)). Without installing, put `npx`
+in front: `npx create-dotfiles --auto`.
 
 ```shell
-brew tap thilllon/tap
-brew trust thilllon/tap
-brew install create-dotfiles
+create-dotfiles                 # interactive
+create-dotfiles --auto          # defaults: core targets + secrets, folder output
+create-dotfiles --dry-run       # show the plan, write nothing
+create-dotfiles restore         # put the newest collection back (never overwrites)
 ```
-
-After that, `brew install create-dotfiles` and `brew upgrade create-dotfiles` work by name.
-Homebrew 6 and later load formulae only from taps you trust, which is what `brew trust` is for.
-`brew install thilllon/tap/create-dotfiles` does the same in one command, trusting just this
-formula. In a `Brewfile`:
-
-```ruby
-tap "thilllon/tap", trusted: true
-brew "create-dotfiles"
-```
-
-The formula lives in [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap) and follows
-npm on its own, usually within a few hours of a release.
-
-Or with npm: `npm i -g create-dotfiles` (also `pnpm add -g` / `yarn global add`). Node 22 or newer.
 
 ### Flags
 
@@ -180,9 +244,9 @@ Every flag works with `--auto` and, in interactive mode, pre-fills the correspon
 ### Password-protected zip
 
 ```shell
-npx create-dotfiles --format zip --encrypt-zip     # asks for the password (hidden), twice
+create-dotfiles --format zip --encrypt-zip     # asks for the password (hidden), twice
 CREATE_DOTFILES_ZIP_PASSWORD_FILE=~/.dotfiles-zip-password \
-  npx create-dotfiles --auto --format zip --encrypt-zip
+  create-dotfiles --auto --format zip --encrypt-zip
 ```
 
 - **Encryption.** WinZip AES-256 in its AE-2 form, the strongest zip encryption that common tools
@@ -210,9 +274,9 @@ CREATE_DOTFILES_ZIP_PASSWORD_FILE=~/.dotfiles-zip-password \
 ### Restore
 
 ```shell
-npx create-dotfiles restore                          # newest ~/dotfiles-YYYYMMDD-HHMMSS
-npx create-dotfiles restore ~/dotfiles-20260902-150719
-npx create-dotfiles restore --force                  # overwrite files that already exist
+create-dotfiles restore                          # newest ~/dotfiles-YYYYMMDD-HHMMSS
+create-dotfiles restore ~/dotfiles-20260902-150719
+create-dotfiles restore --force                  # overwrite files that already exist
 ```
 
 Files that already exist are reported as `[SKIP] <path> exists (use --force)`. Restore works from a collection **folder**; extract a zip or tar.gz first (an encrypted zip with `bsdtar -xf`, which asks for the password).
