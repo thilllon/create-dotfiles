@@ -136,7 +136,18 @@ npx create-dotfiles --dry-run       # show the plan, write nothing
 npx create-dotfiles restore         # put the newest collection back (never overwrites)
 ```
 
-Or install it: `npm i -g create-dotfiles` (also `pnpm add -g` / `yarn global add`). Node 22 or newer.
+Or install it:
+
+```shell
+brew install thilllon/tap/create-dotfiles   # Homebrew on macOS or Linux; brings its own Node
+npm i -g create-dotfiles                     # also pnpm add -g / yarn global add; Node 22 or newer
+```
+
+The Homebrew formula lives in [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap)
+and follows npm on its own, usually within a few hours of a release. Homebrew only loads formulae
+from trusted taps: the full `thilllon/tap/create-dotfiles` name above trusts this one; after a
+plain `brew tap thilllon/tap`, run `brew trust thilllon/tap` once to use the short name. In a
+`Brewfile`, write `brew "thilllon/tap/create-dotfiles", trusted: true`.
 
 ### Flags
 
@@ -269,7 +280,7 @@ pnpm dev              # run src/cli.ts with tsx
 | `pnpm build`         | tsdown → `dist/cli.cjs`, `dist/index.cjs`, `dist/index.d.cts`         |
 | `mise run ci`        | The whole CI job locally, with `CI=true`                              |
 
-Releases are automated: dependabot's minor and patch updates are merged and published as soon as CI is green, and releases run only from GitHub Actions with npm Trusted Publishing. See [AGENTS.md](AGENTS.md) for the details.
+Releases are automated: dependabot's minor and patch updates are merged and published as soon as CI is green, and releases run only from GitHub Actions with npm Trusted Publishing. The Homebrew tap picks up each npm release by itself after checking its provenance. See [AGENTS.md](AGENTS.md) for the details.
 
 ## License
 

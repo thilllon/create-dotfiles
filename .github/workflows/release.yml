@@ -85,3 +85,35 @@ jobs:
           fi
           echo "npm has $LATEST; releasing $NEXT"
           pnpm release --ci "$NEXT"
+
+  # Homebrew follows npm on its own: bump.yml in thilllon/homebrew-tap polls npm on a schedule
+  # and commits each new version. GitHub disables a public repository's scheduled workflows after
+  # 60 days without activity. The tap's bump commits count as activity, so that only happens after
+  # a long gap between releases, and then this release would silently never reach Homebrew. This
+  # job fails and opens an issue that mentions the owner: a release dispatched by
+  # dependabot-auto-release.yml is triggered by github-actions[bot], so a failed run alone notifies
+  # nobody. It runs after the release job, so it cannot affect what was published.
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check that the Homebrew tap will pick this release up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Homebrew tap: bump.yml is not active"
+        run: |
+          STATE=$(gh api repos/thilllon/homebrew-tap/actions/workflows/bump.yml --jq .state) || STATE="unreadable (see the error above)"
+          if [ "$STATE" = "active" ]; then
+            echo "bump.yml in thilllon/homebrew-tap is active; it will pick this release up within three hours."
+            exit 0
+          fi
+          MSG="Homebrew will not pick up this release: bump.yml in thilllon/homebrew-tap is $STATE. Run: gh workflow enable bump.yml -R thilllon/homebrew-tap && gh workflow run bump.yml -R thilllon/homebrew-tap"
+          echo "::error::$MSG"
+          OPEN=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          if [ -z "$OPEN" ]; then
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --body "@$GITHUB_REPOSITORY_OWNER $MSG (release run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          fi
+          exit 1
