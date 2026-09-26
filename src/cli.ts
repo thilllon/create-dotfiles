@@ -11,8 +11,11 @@ import {
   formatRestoreSummary,
   formatSummary,
   parseFormats,
+  requireZipPasswordFromEnv,
   restore,
   runInteractive,
+  ZIP_PASSWORD_ENV,
+  ZIP_PASSWORD_FILE_ENV,
 } from "./index";
 
 const cli = cac("create-dotfiles");
@@ -21,6 +24,8 @@ interface CollectFlags {
   auto?: boolean;
   includeEnv?: boolean;
   includeConfig?: boolean;
+  /** cac does not treat dashed flags as boolean: `--encrypt-zip ""` arrives as 0, `--encrypt-zip x` as "x". */
+  encryptZip?: boolean | string | number;
   /** cac yields `0` for `--format ""` (and `true` for a bare `--format`), not a string. */
   format?: string | string[] | number | boolean;
   out?: string;
@@ -53,11 +58,24 @@ function formatFlag(value: NonNullable<CollectFlags["format"]>): string | string
   return typeof value === "string" || Array.isArray(value) ? value : "";
 }
 
+/**
+ * `--encrypt-zip` takes no value. Given one (say, a password, or an empty variable that cac turns
+ * into 0), it is rejected rather than read as "don't encrypt"; the value is not echoed, since it
+ * may be the password.
+ */
+function encryptZipFlag(value: CollectFlags["encryptZip"]): boolean | undefined {
+  if (value === undefined || typeof value === "boolean") return value;
+  throw new DotfileError(
+    `--encrypt-zip takes no value; the password comes from the prompt, $${ZIP_PASSWORD_ENV} or $${ZIP_PASSWORD_FILE_ENV}`
+  );
+}
+
 /** Flags that were not given stay undefined so the config file's `[settings]` can fill them. */
 function toOptions(flags: CollectFlags): CollectOptions {
   return {
     includeEnv: flags.includeEnv,
     includeConfig: flags.includeConfig,
+    encryptZip: encryptZipFlag(flags.encryptZip),
     formats: flags.format === undefined ? undefined : parseFormats(formatFlag(flags.format)),
     outDir: flags.out === undefined ? undefined : resolve(flags.out),
     maxFileSizeMb: flags.maxFileSize === undefined ? undefined : Number(flags.maxFileSize),
@@ -73,6 +91,10 @@ cli
     "Include secrets: .env files, .npmrc, .yarnrc, .netrc, .aws/credentials, .docker/config.json (default: on; --no-include-env to leave them out)"
   )
   .option("--include-config", "Include everything under ~/.config")
+  .option(
+    "--encrypt-zip",
+    `Encrypt the zip with AES-256. The password is asked for in a terminal; with --auto or without a terminal it is read from $${ZIP_PASSWORD_ENV} or the file named by $${ZIP_PASSWORD_FILE_ENV}`
+  )
   .option("--format <list>", "Comma-separated output formats: folder, zip, tar (default: folder)")
   .option("--out <dir>", "Parent directory for the output (default: home directory)")
   .option(
@@ -92,12 +114,14 @@ cli
         if (!flags.auto) {
           console.log("Not running in an interactive terminal; using --auto defaults.");
         }
-        const summary = await collect(options);
+        // Asked for only if the zip really is encrypted (the flag or encrypt_zip in the config).
+        const summary = await collect({ ...options, zipPassword: requireZipPasswordFromEnv });
         console.log(formatSummary(summary, { listFiles: true }));
         return;
       }
 
       // A cancelled run has already printed "Cancelled." and exits 0 without writing.
+      // A terminal run always asks for the zip password, even with the variables set.
       await runInteractive(createClackPrompter(), options);
     })
   );
@@ -124,7 +148,17 @@ cli.help((sections) => {
       [
         "~/.dotfilesrc.toml",
         "[files] include = [...] extra home-relative paths; exclude = [...] paths or directory names",
-        "[settings] max_file_size_mb, include_env, include_config, formats = [...], out",
+        "[settings] max_file_size_mb, include_env, include_config, encrypt_zip, formats = [...], out",
+      ].join("\n")
+    ),
+  });
+  sections.push({
+    title: "Encrypted zip (--encrypt-zip)",
+    body: indent(
+      [
+        "WinZip AES-256 (AE-2). Passwords need 15-99 printable ASCII characters; leave the prompt empty to generate one.",
+        "File names, sizes and dates stay visible, as in any zip. A folder or tar.gz written alongside is not encrypted.",
+        "Open with bsdtar -xf <zip> (built into macOS; libarchive-tools on Linux), which asks for the password, or 7-Zip, Keka, The Unarchiver. unzip, ditto and GNU tar cannot.",
       ].join("\n")
     ),
   });

@@ -1,10 +1,24 @@
 import { posix } from "node:path";
 import { type CollectOptions, type CollectSummary, writePlan } from "./collect";
+import { DotfileError } from "./errors";
 import type { OutputFormat } from "./formats";
 import { resolveOptions } from "./options";
 import { filterPlan, type Plan, resolveTargets } from "./plan";
-import { formatBytes, formatFoundTargets, formatNeverCopied, formatSummary } from "./report";
+import {
+  formatBytes,
+  formatFoundTargets,
+  formatNeverCopied,
+  formatSummary,
+  outputEncryptionNote,
+} from "./report";
 import { isEnvFile } from "./targets";
+import {
+  assertZipPassword,
+  generateZipPassword,
+  MIN_ZIP_PASSWORD_LENGTH,
+  type ZipPasswordSource,
+  zipPasswordProblem,
+} from "./zip-password";
 
 /** Returned by a {@link Prompter} when the user aborts (Ctrl+C / Esc). */
 export const CANCEL: unique symbol = Symbol("create-dotfiles.cancel");
@@ -28,6 +42,12 @@ export interface MultiselectPrompt<T extends string> {
   required: boolean;
 }
 
+export interface PasswordPrompt {
+  message: string;
+  /** Why the entry is not acceptable, or `undefined` when it is. An empty entry arrives as "". */
+  validate?: (value: string) => string | undefined;
+}
+
 export interface SpinnerHandle {
   start(message: string): void;
   message(message: string): void;
@@ -45,6 +65,12 @@ export interface Prompter {
   note(message: string, title: string): void;
   confirm(prompt: ConfirmPrompt): Promise<boolean | Cancelled>;
   multiselect<T extends string>(prompt: MultiselectPrompt<T>): Promise<T[] | Cancelled>;
+  /**
+   * A masked entry; resolves to "" when the user just presses Enter. Optional so that prompters
+   * written before zip encryption still type-check; without it an encrypted zip needs
+   * `zipPassword` in the options.
+   */
+  password?(prompt: PasswordPrompt): Promise<string | Cancelled>;
   spinner(): SpinnerHandle;
 }
 
@@ -69,9 +95,72 @@ function outputPreview(plan: Plan): string {
     lines.push(`${plan.tooLarge.length} file(s) over ${plan.maxFileSizeMb} MB will be skipped`);
   }
   if (plan.outputs.folder !== undefined) lines.push(`folder: ${plan.outputs.folder}/`);
-  if (plan.outputs.zip !== undefined) lines.push(`zip:    ${plan.outputs.zip}`);
+  if (plan.outputs.zip !== undefined) {
+    lines.push(
+      `zip:    ${plan.outputs.zip}${plan.encryptZip ? " (AES-256, password-protected)" : ""}`
+    );
+  }
   if (plan.outputs.tar !== undefined) lines.push(`tar.gz: ${plan.outputs.tar}`);
+  const note = outputEncryptionNote(plan);
+  if (note !== undefined) lines.push(note);
   return lines.join("\n");
+}
+
+/**
+ * The password for an encrypted zip: one the caller supplied, else a masked entry typed twice
+ * (a mismatch starts over, so a typo in the first entry can be fixed). An empty entry generates
+ * one instead, shown once, and it is used only after the user says they have stored it.
+ * Answering No goes back to the entry: an Enter meant for the previous question (clack's
+ * confirm submits on "y" alone) lands here as an empty entry, and that user should still get to
+ * type their own.
+ */
+async function askZipPassword(
+  prompter: Prompter,
+  source: ZipPasswordSource | undefined
+): Promise<string | Cancelled> {
+  const given = typeof source === "function" ? source() : source;
+  if (given !== undefined) {
+    assertZipPassword(given);
+    prompter.note(
+      "Using the zip password that was supplied, so it is not asked for.",
+      "Zip password"
+    );
+    return given;
+  }
+  if (prompter.password === undefined) {
+    throw new DotfileError(
+      "This prompter cannot ask for a password: pass zipPassword to encrypt the zip"
+    );
+  }
+  const ask = prompter.password.bind(prompter);
+
+  for (;;) {
+    const password = await ask({
+      message: `Zip password (at least ${MIN_ZIP_PASSWORD_LENGTH} characters; leave empty to generate one)`,
+      validate: (value) => (value === "" ? undefined : zipPasswordProblem(value)),
+    });
+    if (password === CANCEL) return CANCEL;
+
+    if (password !== "") {
+      const repeated = await ask({ message: "Repeat the zip password" });
+      if (repeated === CANCEL) return CANCEL;
+      if (repeated === password) return password;
+      prompter.note("The passwords do not match. Enter the password again.", "Zip password");
+      continue;
+    }
+
+    const generated = generateZipPassword();
+    prompter.note(
+      `${generated}\n\nThe entry was left empty, so this password was generated. Store it in a password manager now: it is not saved anywhere, and the zip cannot be opened without it.`,
+      "Generated zip password"
+    );
+    const stored = await prompter.confirm({
+      message: "Have you stored it? (No to type your own password instead)",
+      initialValue: false,
+    });
+    if (stored === CANCEL) return CANCEL;
+    if (stored) return generated;
+  }
 }
 
 /**
@@ -87,7 +176,10 @@ export async function runInteractive(
     prompter.cancel("Cancelled.");
     return { cancelled: true };
   };
-  const defaults = resolveOptions(options);
+  // Encryption is settled by its own question once the formats are known; until then it plays
+  // no part (and `encryptZip` with the default formats would not even resolve).
+  const defaults = resolveOptions({ ...options, encryptZip: undefined });
+  const encryptByDefault = options.encryptZip ?? defaults.config.settings.encryptZip ?? false;
 
   prompter.intro("create-dotfiles");
 
@@ -98,6 +190,7 @@ export async function runInteractive(
     config: defaults.config,
     includeEnv: true,
     includeConfig: true,
+    encryptZip: false,
   });
   scanning.stop(`Scanned ${defaults.homeDir}`);
 
@@ -135,10 +228,28 @@ export async function runInteractive(
     formats = answer;
   }
 
+  let encryptZip = false;
+  let zipPassword: string | undefined;
+  if (formats.includes("zip")) {
+    const answer = await prompter.confirm({
+      message: "Protect the zip with a password? (AES-256)",
+      initialValue: encryptByDefault,
+    });
+    if (answer === CANCEL) return cancelled();
+    encryptZip = answer;
+    // A dry run encrypts nothing, so it does not ask for a password.
+    if (encryptZip && !options.dryRun) {
+      const password = await askZipPassword(prompter, options.zipPassword);
+      if (password === CANCEL) return cancelled();
+      zipPassword = password;
+    }
+  }
+
   const plan = filterPlan(full, {
     includeEnv,
     includeConfig,
     formats,
+    encryptZip,
     now: options.now ?? new Date(),
   });
   prompter.note(outputPreview(plan), "Output");
@@ -158,6 +269,7 @@ export async function runInteractive(
   try {
     summary = await writePlan(plan, {
       onProgress: (p) => progress.message(`Copying ${p.done}/${p.total}: ${p.file.path}`),
+      zipPassword,
     });
   } catch (err) {
     progress.stop("Collection failed");

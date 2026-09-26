@@ -1,5 +1,5 @@
 import type { CollectSummary } from "./collect";
-import type { FoundTarget, PlannedFile } from "./plan";
+import type { FoundTarget, Plan, PlannedFile } from "./plan";
 import type { RestoreSummary } from "./restore";
 import {
   ENV_SCAN_MAX_DEPTH,
@@ -31,11 +31,33 @@ function fileLines(files: readonly PlannedFile[]): string[] {
   return files.map((file) => `  ${file.path} (${formatBytes(file.size)}) [${file.group}]`);
 }
 
+/**
+ * With an encrypted zip, a folder or tar.gz written in the same run holds the same files in
+ * the clear; say so, so nobody mistakes the whole run for protected. `undefined` otherwise.
+ */
+export function outputEncryptionNote(
+  plan: Pick<Plan, "encryptZip" | "outputs">
+): string | undefined {
+  if (!plan.encryptZip) return undefined;
+  const clear = [
+    plan.outputs.folder !== undefined ? "folder" : undefined,
+    plan.outputs.tar !== undefined ? "tar.gz" : undefined,
+  ].filter((name): name is string => name !== undefined);
+  if (clear.length === 0) return undefined;
+  const subject = clear.length === 1 ? `the ${clear[0]} is` : `the ${clear.join(" and ")} are`;
+  return `Only the zip is encrypted: ${subject} not.`;
+}
+
 function outputLines(summary: CollectSummary): string[] {
   const lines: string[] = [];
   if (summary.outputs.folder !== undefined) lines.push(`  folder: ${summary.outputs.folder}/`);
-  if (summary.outputs.zip !== undefined) lines.push(`  zip:    ${summary.outputs.zip}`);
+  if (summary.outputs.zip !== undefined) {
+    const protection = summary.encryptZip ? " (AES-256, password-protected)" : "";
+    lines.push(`  zip:    ${summary.outputs.zip}${protection}`);
+  }
   if (summary.outputs.tar !== undefined) lines.push(`  tar.gz: ${summary.outputs.tar}`);
+  const note = outputEncryptionNote(summary);
+  if (note !== undefined) lines.push(note);
   return lines;
 }
 

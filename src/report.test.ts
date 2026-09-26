@@ -9,6 +9,7 @@ import {
   formatNeverCopied,
   formatRestoreSummary,
   formatSummary,
+  outputEncryptionNote,
 } from "./report";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "./test-helpers";
 
@@ -68,7 +69,28 @@ describe("formatSummary", () => {
     expect(text).toContain(`Would write:\n  folder: ${join(out, FIXED_NAME)}/`);
     expect(text).toContain(`  zip:    ${join(out, `${FIXED_NAME}.zip`)}`);
     expect(text).toContain(`  tar.gz: ${join(out, `${FIXED_NAME}.tar.gz`)}`);
+    expect(text).not.toContain("AES-256");
+    expect(text).not.toContain("Only the zip is encrypted");
     expect(text.trimEnd().endsWith("Dry run: nothing was written.")).toBe(true);
+  });
+
+  it("marks an encrypted zip and warns that the folder and tar.gz beside it are not", async () => {
+    const summary = await collect({
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      formats: ["folder", "zip", "tar"],
+      encryptZip: true,
+      dryRun: true,
+    });
+
+    const text = formatSummary(summary);
+
+    expect(text).toContain(
+      `  zip:    ${join(out, `${FIXED_NAME}.zip`)} (AES-256, password-protected)\n`
+    );
+    expect(text).toContain("Only the zip is encrypted: the folder and tar.gz are not.");
   });
 
   it("shows counts only for a real run unless the file list is requested", async () => {
@@ -106,6 +128,25 @@ describe("formatSummary", () => {
     expect(formatSummary(summary)).toContain(
       "Failed (1):\n  dotfiles-20260101-000000: excluded: matches a never-copied rule"
     );
+  });
+});
+
+describe("outputEncryptionNote", () => {
+  const outputs = (...names: ("folder" | "zip" | "tar")[]) =>
+    Object.fromEntries(names.map((name) => [name, `/out/x.${name}`]));
+
+  it.each([
+    [false, outputs("folder", "zip", "tar"), undefined],
+    [true, outputs("zip"), undefined],
+    [true, outputs("folder", "zip"), "Only the zip is encrypted: the folder is not."],
+    [true, outputs("zip", "tar"), "Only the zip is encrypted: the tar.gz is not."],
+    [
+      true,
+      outputs("folder", "zip", "tar"),
+      "Only the zip is encrypted: the folder and tar.gz are not.",
+    ],
+  ])("encryptZip=%s with %j -> %s", (encryptZip, planOutputs, note) => {
+    expect(outputEncryptionNote({ encryptZip, outputs: planOutputs })).toBe(note);
   });
 });
 

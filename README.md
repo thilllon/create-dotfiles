@@ -121,6 +121,7 @@ home-relative path, so the folder is a faithful mirror and the archives restore 
 | **▸ Interactive or scripted** | A terminal gets prompts; `--auto` gets defaults. Piped or in CI, it falls back to `--auto` on its own.                                                                                   |
 | **▸ Timestamped, faithful**   | `~/dotfiles-YYYYMMDD-HHMMSS/` mirrors home-relative paths. Get a folder, a zip, a tar.gz, or all three in one run.                                                                       |
 | **▸ Secrets in, keys out**    | `.env` files (found by a bounded scan), `.npmrc`, `.netrc`, `.aws/credentials`, `.docker/config.json` are included by default; `--no-include-env` leaves them out. SSH and GPG private keys are never copied, ever. |
+| **▸ Encrypted zip**           | `--encrypt-zip` protects the zip with WinZip AES-256 (AE-2). The password comes from a hidden prompt, or is generated for you (150 bits); never from the command line. |
 | **▸ Never copies junk**       | `node_modules`, `.git`, caches, previous collections and files over 10 MB are skipped — and the skips are reported, not hidden.                                                          |
 | **▸ Symlinks resolved**       | A stow-style symlinked `~/.config/nvim` is copied as real files, at every level, so nothing in the archive points back at a machine you no longer have.                                 |
 | **▸ Safe restore**            | `restore` puts the newest collection back without overwriting anything unless you pass `--force`.                                                                                       |
@@ -172,8 +173,39 @@ Every flag works with `--auto` and, in interactive mode, pre-fills the correspon
 | `--out <dir>`            | `~`       | Parent directory for the output. `~/` is expanded.                                          |
 | `--max-file-size <mb>`   | `10`      | Skip files larger than this; they are listed in the summary.                               |
 | `--dry-run`              | off       | Print the plan and the output paths without writing anything.                              |
+| `--encrypt-zip`          | off       | Encrypt the zip with AES-256; see [Password-protected zip](#password-protected-zip). `--no-encrypt-zip` overrides the config. |
 
 `--help` and `--version` never read or write anything in your home directory.
+
+### Password-protected zip
+
+```shell
+npx create-dotfiles --format zip --encrypt-zip     # asks for the password (hidden), twice
+CREATE_DOTFILES_ZIP_PASSWORD_FILE=~/.dotfiles-zip-password \
+  npx create-dotfiles --auto --format zip --encrypt-zip
+```
+
+- **Encryption.** WinZip AES-256 in its AE-2 form, the strongest zip encryption that common tools
+  open. Every file is encrypted with AES-256 and authenticated with HMAC-SHA1, and no plaintext
+  CRC is stored. The old ZipCrypto scheme, which a known-plaintext attack breaks, is never used.
+- **The password is the real protection.** The zip format fixes its key derivation at
+  PBKDF2-HMAC-SHA1 with 1000 iterations, so one GPU tries tens of millions of guesses a second.
+  - A typed password must be at least 15 characters (the NIST SP 800-63B minimum). It can use
+    only printable ASCII and at most 99 characters, the limits 7-Zip accepts.
+  - Leave the prompt empty to generate one: 30 random characters (150 bits), such as
+    `7K2QM-4XH9T-…`. It is shown once, and it is used only after you confirm you have stored it.
+- **Where the password comes from.** In a terminal, the hidden prompt, always. With `--auto` (or
+  with no terminal), `CREATE_DOTFILES_ZIP_PASSWORD`, or the first line of the file named by
+  `CREATE_DOTFILES_ZIP_PASSWORD_FILE`. No flag takes the password, because the command line
+  shows up in `ps` and in your shell history. The config file never holds it either. Without a
+  usable password the run stops before writing anything; it never falls back to a plain zip.
+- **What stays visible.** File names, sizes and dates, as in any zip. A folder or tar.gz written
+  in the same run is not encrypted, and the summary says so. Without the folder among the formats,
+  the files are staged in a private temporary folder rather than next to the zip, so no plaintext
+  copy ever reaches the output directory (a synced folder or a USB stick, say).
+- **Opening it.** `bsdtar -xf dotfiles-….zip` asks for the password. `bsdtar` is built into macOS
+  (where `tar` is the same program); on Linux it comes with libarchive-tools. 7-Zip, Keka and The
+  Unarchiver open it too. `unzip`, `ditto` and GNU tar cannot open AES zips.
 
 ### Restore
 
@@ -183,7 +215,7 @@ npx create-dotfiles restore ~/dotfiles-20260902-150719
 npx create-dotfiles restore --force                  # overwrite files that already exist
 ```
 
-Files that already exist are reported as `[SKIP] <path> exists (use --force)`. Restore works from a collection **folder**; extract a zip or tar.gz first.
+Files that already exist are reported as `[SKIP] <path> exists (use --force)`. Restore works from a collection **folder**; extract a zip or tar.gz first (an encrypted zip with `bsdtar -xf`, which asks for the password).
 
 ## What gets collected
 
@@ -239,6 +271,7 @@ If `~/.dotfilesrc.toml` exists it is read; it is never created for you.
 [settings]
 include_env = true
 include_config = false
+encrypt_zip = false        # the password is never read from this file
 formats = ["folder", "zip"]
 max_file_size_mb = 10
 out = "~/Backups"
@@ -260,6 +293,9 @@ import { collect, restore } from "create-dotfiles";
 const summary = await collect({ formats: ["folder", "zip"], includeEnv: false });
 console.log(summary);
 
+// AES-256 zip; a function is called only if the zip really is encrypted.
+await collect({ formats: ["zip"], encryptZip: true, zipPassword: () => readSecretSomehow() });
+
 restore({ force: false });
 ```
 
@@ -270,6 +306,7 @@ restore({ force: false });
 - **Nothing is written until the plan is final.** Interactive cancels and `--dry-run` leave your disk untouched.
 - **Output never merges.** If `dotfiles-<timestamp>` already exists, the run stops with `Output already exists` instead of writing into it.
 - **Copies stay inside the collection.** Every path is validated to be relative and confined to your home directory before anything is copied.
+- **Encryption never degrades silently.** `--encrypt-zip` without a usable password stops before anything is written; it never falls back to an unencrypted zip.
 - **Failures are per file.** One unreadable file is reported and the rest proceeds; the summary lists every skip and failure.
 
 ## Development
@@ -287,7 +324,7 @@ pnpm dev              # run src/cli.ts with tsx
 | `pnpm lint`          | Biome check                                                           |
 | `pnpm format`        | Biome check `--write`                                                 |
 | `pnpm typecheck`     | `tsc --noEmit`                                                        |
-| `pnpm build`         | tsdown → `dist/cli.cjs`, `dist/index.cjs`, `dist/index.d.cts`         |
+| `pnpm build`         | tsdown → `dist/cli.cjs`, `dist/index.cjs`, `dist/index.d.cts`, plus the lazily loaded zip.js chunk |
 | `mise run ci`        | The whole CI job locally, with `CI=true`                              |
 
 Releases are automated: dependabot's minor and patch updates are merged and published as soon as CI is green, and releases run only from GitHub Actions with npm Trusted Publishing. The Homebrew tap picks up each npm release by itself after checking its provenance. See [AGENTS.md](AGENTS.md) for the details.

@@ -12,6 +12,8 @@ export interface DotfilesSettings {
   includeEnv?: boolean;
   includeConfig?: boolean;
   formats?: OutputFormat[];
+  /** Encrypt the zip (AES-256). The password itself is never read from the config file. */
+  encryptZip?: boolean;
   /** Parent directory for the output; relative paths and `~/` resolve against the home directory. */
   out?: string;
 }
@@ -115,6 +117,7 @@ function parseSettings(settings: Table, configPath: string): DotfilesSettings {
   const booleans = [
     ["include_env", "includeEnv"],
     ["include_config", "includeConfig"],
+    ["encrypt_zip", "encryptZip"],
   ] as const;
   for (const [key, field] of booleans) {
     const flag = settings[key];

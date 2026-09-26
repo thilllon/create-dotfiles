@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { unzipSync } from "fflate";
 import { list as tarList } from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readAesZip } from "./test-aes-zip";
 import { createFile, makeTempDir } from "./test-helpers";
 
 // Vitest runs with the project root as cwd, so paths resolve from there. tsx is started as
@@ -33,8 +34,19 @@ describe("cli", () => {
    * are pipes, so the process is never attached to a TTY.
    */
   function runCli(...args: string[]) {
+    return runCliWithEnv({}, ...args);
+  }
+
+  /**
+   * {@link runCli} with extra environment variables. The zip password variables are cleared
+   * first, so a value in the developer's own environment never leaks into a test.
+   */
+  function runCliWithEnv(extraEnv: Record<string, string>, ...args: string[]) {
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: tempHome, USERPROFILE: tempHome };
+    delete env.CREATE_DOTFILES_ZIP_PASSWORD;
+    delete env.CREATE_DOTFILES_ZIP_PASSWORD_FILE;
     const result = spawnSync(process.execPath, [tsxCli, cliPath, ...args], {
-      env: { ...process.env, HOME: tempHome, USERPROFILE: tempHome },
+      env: { ...env, ...extraEnv },
       encoding: "utf8",
       cwd: tmpdir(),
     });
@@ -66,6 +78,7 @@ describe("cli", () => {
         "--out",
         "--max-file-size",
         "--dry-run",
+        "--encrypt-zip",
       ]) {
         expect(stdout).toContain(flag);
       }
@@ -73,6 +86,8 @@ describe("cli", () => {
       expect(stdout).toContain("node_modules");
       expect(stdout).toContain("never enters ~/Library, ~/Desktop, ~/Documents");
       expect(stdout).toContain(".dotfilesrc.toml");
+      expect(stdout).toContain("CREATE_DOTFILES_ZIP_PASSWORD");
+      expect(stdout).toContain("WinZip AES-256 (AE-2)");
       // Nothing under the home directory the child actually used is read or written on --help
       // (module scope must stay side-effect free).
       expect(readdirSync(tempHome)).toEqual([]);
@@ -272,6 +287,154 @@ describe("cli", () => {
         expect(collections()).toEqual([]);
       }
     );
+
+    describe("--encrypt-zip", () => {
+      const PASSWORD = "correct horse battery staple";
+      const zipOf = () => {
+        const zips = readdirSync(tempHome).filter((n) => /^dotfiles-\d{8}-\d{6}\.zip$/.test(n));
+        expect(zips).toHaveLength(1);
+        return readFileSync(join(tempHome, zips[0]));
+      };
+
+      it("encrypts the zip with the password from CREATE_DOTFILES_ZIP_PASSWORD", () => {
+        const { status, stdout } = runCliWithEnv(
+          { CREATE_DOTFILES_ZIP_PASSWORD: PASSWORD },
+          "--auto",
+          "--format",
+          "zip",
+          "--encrypt-zip"
+        );
+
+        expect(status).toBe(0);
+        expect(stdout).toMatch(/zip: {4}\S+\.zip \(AES-256, password-protected\)/);
+        const names = readAesZip(zipOf(), PASSWORD).map((e) => e.name.replace(/^[^/]+\//, ""));
+        expect(names.sort()).toEqual(
+          [".config/nvim/init.lua", ".npmrc", ".ssh/config", ".zshrc", "projects/app/.env"].sort()
+        );
+        expect(() => readAesZip(zipOf(), "some other long password")).toThrow(
+          /wrong password|authentication failed/
+        );
+      });
+
+      it("reads the first line of the file named by CREATE_DOTFILES_ZIP_PASSWORD_FILE", () => {
+        const file = join(tempHome, "zip-password.txt");
+        writeFileSync(file, `${PASSWORD}\n`);
+
+        const { status } = runCliWithEnv(
+          { CREATE_DOTFILES_ZIP_PASSWORD_FILE: file },
+          "--auto",
+          "--format",
+          "zip",
+          "--encrypt-zip"
+        );
+
+        expect(status).toBe(0);
+        expect(readAesZip(zipOf(), PASSWORD).length).toBeGreaterThan(0);
+      });
+
+      it("takes encrypt_zip from the config, and --no-encrypt-zip turns it off", () => {
+        writeFileSync(join(tempHome, ".dotfilesrc.toml"), "[settings]\nencrypt_zip = true\n");
+
+        const encrypted = runCliWithEnv(
+          { CREATE_DOTFILES_ZIP_PASSWORD: PASSWORD },
+          "--auto",
+          "--format",
+          "zip"
+        );
+        expect(encrypted.status).toBe(0);
+        expect(readAesZip(zipOf(), PASSWORD).length).toBeGreaterThan(0);
+
+        rmSync(join(tempHome, readdirSync(tempHome).find((n) => n.endsWith(".zip")) ?? ""));
+        const plain = runCliWithEnv(
+          { CREATE_DOTFILES_ZIP_PASSWORD: PASSWORD },
+          "--auto",
+          "--format",
+          "zip",
+          "--no-encrypt-zip"
+        );
+        expect(plain.status).toBe(0);
+        expect(Object.keys(unzipSync(zipOf())).length).toBeGreaterThan(0);
+      });
+
+      it("leaves the zip unencrypted when only the password variable is set", () => {
+        const { status, stdout } = runCliWithEnv(
+          { CREATE_DOTFILES_ZIP_PASSWORD: PASSWORD },
+          "--auto",
+          "--format",
+          "zip"
+        );
+
+        expect(status).toBe(0);
+        expect(stdout).not.toContain("AES-256");
+        expect(Object.keys(unzipSync(zipOf())).length).toBeGreaterThan(0);
+      });
+
+      it.each([
+        [
+          "no password in the environment",
+          {},
+          ["--format", "zip"],
+          "Error: Encrypting the zip needs a password: set CREATE_DOTFILES_ZIP_PASSWORD or CREATE_DOTFILES_ZIP_PASSWORD_FILE",
+        ],
+        [
+          "a short password",
+          { CREATE_DOTFILES_ZIP_PASSWORD: "short" },
+          ["--format", "zip"],
+          "Error: The zip password must be at least 15 characters (got 5)",
+        ],
+        [
+          "no zip among the formats",
+          { CREATE_DOTFILES_ZIP_PASSWORD: PASSWORD },
+          ["--format", "folder"],
+          'Error: Encrypting the zip needs "zip" among the output formats (got folder)',
+        ],
+      ])("refuses %s without a stack trace and writes nothing", (_, env, args, message) => {
+        const before = readdirSync(tempHome).sort();
+
+        const { status, output } = runCliWithEnv(env, "--auto", ...args, "--encrypt-zip");
+
+        expect(status).toBe(1);
+        expect(output).toContain(message);
+        expect(output).not.toContain("    at ");
+        expect(readdirSync(tempHome).sort()).toEqual(before);
+      });
+
+      it.each([
+        ["an empty value", ""],
+        ["a zero", "0"],
+        ["what looks like the password", "s3cret-value-given-to-the-flag"],
+      ])("rejects %s after --encrypt-zip without echoing it, and writes nothing", (_, value) => {
+        const before = readdirSync(tempHome).sort();
+
+        const { status, output } = runCliWithEnv(
+          { CREATE_DOTFILES_ZIP_PASSWORD: PASSWORD },
+          "--auto",
+          "--format",
+          "zip",
+          "--encrypt-zip",
+          value
+        );
+
+        expect(status).toBe(1);
+        expect(output).toContain("Error: --encrypt-zip takes no value");
+        if (value.length > 1) expect(output).not.toContain(value);
+        expect(readdirSync(tempHome).sort()).toEqual(before);
+      });
+
+      it("needs no password for a dry run", () => {
+        const { status, stdout } = runCli(
+          "--auto",
+          "--dry-run",
+          "--format",
+          "zip",
+          "--encrypt-zip"
+        );
+
+        expect(status).toBe(0);
+        expect(stdout).toContain("(AES-256, password-protected)");
+        expect(collections()).toEqual([]);
+      });
+    });
 
     it("reads [settings] from ~/.dotfilesrc.toml and lets flags override them", () => {
       writeFileSync(join(tempHome, ".dotfilesrc.toml"), '[settings]\nformats = ["zip"]\n');

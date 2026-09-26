@@ -9,14 +9,18 @@ import {
   type ConfirmPrompt,
   type InteractiveOptions,
   type MultiselectPrompt,
+  type PasswordPrompt,
   type Prompter,
   runInteractive,
 } from "./interactive";
+import { readAesZip } from "./test-aes-zip";
 import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "./test-helpers";
 
 interface Script {
   confirm?: (boolean | Cancelled)[];
   multiselect?: (string[] | Cancelled)[];
+  /** Entries typed at password prompts; one the prompt's validator rejects is typed over. */
+  password?: (string | Cancelled)[];
 }
 
 /** Records every prompt in order and answers from a script; never touches a terminal. */
@@ -25,6 +29,9 @@ class FakePrompter implements Prompter {
   readonly notes: { title: string; message: string }[] = [];
   readonly confirms: ConfirmPrompt[] = [];
   readonly multiselects: MultiselectPrompt<string>[] = [];
+  readonly passwords: PasswordPrompt[] = [];
+  /** What each password prompt's validator said about rejected entries, in order. */
+  readonly passwordRejections: string[] = [];
   readonly spinnerLog: string[] = [];
   introTitle?: string;
   outroMessage?: string;
@@ -66,6 +73,20 @@ class FakePrompter implements Prompter {
     const answer = this.script.multiselect?.shift();
     if (answer === undefined) throw new Error(`unscripted multiselect: ${prompt.message}`);
     return answer as T[] | Cancelled;
+  }
+
+  /** Like clack: an entry the validator rejects is asked for again, from the next scripted one. */
+  async password(prompt: PasswordPrompt): Promise<string | Cancelled> {
+    this.passwords.push(prompt);
+    this.events.push(`password:${prompt.message}`);
+    for (;;) {
+      const answer = this.script.password?.shift();
+      if (answer === undefined) throw new Error(`unscripted password: ${prompt.message}`);
+      if (answer === CANCEL) return answer;
+      const problem = prompt.validate?.(answer);
+      if (problem === undefined) return answer;
+      this.passwordRejections.push(problem);
+    }
   }
 
   spinner() {
@@ -112,6 +133,7 @@ describe("runInteractive", () => {
     new FakePrompter({
       confirm: script.confirm ?? [false, false, true],
       multiselect: script.multiselect ?? [["folder"]],
+      password: script.password ?? [],
     });
 
   it("asks the questions in order, quoting counts from the scan", async () => {
@@ -185,7 +207,7 @@ describe("runInteractive", () => {
   });
 
   it("respects Yes answers and the chosen formats", async () => {
-    const prompter = accept({ confirm: [true, true, true], multiselect: [["zip", "tar"]] });
+    const prompter = accept({ confirm: [true, true, false, true], multiselect: [["zip", "tar"]] });
 
     const result = await run(prompter);
 
@@ -226,7 +248,10 @@ describe("runInteractive", () => {
   });
 
   it("shows the output paths and file count before the final confirm", async () => {
-    const prompter = accept({ confirm: [false, false, true], multiselect: [["folder", "zip"]] });
+    const prompter = accept({
+      confirm: [false, false, false, true],
+      multiselect: [["folder", "zip"]],
+    });
 
     await run(prompter);
 
@@ -325,6 +350,217 @@ describe("runInteractive", () => {
 
     expect(prompter.spinnerLog.at(-1)).toBe("stop:Collection failed");
     expect(prompter.outroMessage).toBeUndefined();
+  });
+
+  describe("zip encryption", () => {
+    const PASSWORD = "correct horse battery staple";
+    const PROTECT = "Protect the zip with a password? (AES-256)";
+    const zipPath = () => join(out, `${FIXED_NAME}.zip`);
+
+    it("asks about protection only when a zip is chosen, defaulting to No", async () => {
+      const folderOnly = accept();
+      await run(folderOnly);
+      expect(folderOnly.confirms.map((c) => c.message)).not.toContain(PROTECT);
+
+      rmSync(out, { recursive: true, force: true });
+      const zipped = accept({ confirm: [false, false, false, true], multiselect: [["zip"]] });
+      await run(zipped);
+      expect(zipped.confirms.find((c) => c.message === PROTECT)?.initialValue).toBe(false);
+      expect(zipped.passwords).toEqual([]);
+      expect(Object.keys(unzipSync(readFileSync(zipPath())))).toContain(`${FIXED_NAME}/.zshrc`);
+    });
+
+    it("encrypts with a password typed twice and says so before and after writing", async () => {
+      const prompter = accept({
+        confirm: [true, false, true, true],
+        multiselect: [["folder", "zip"]],
+        password: [PASSWORD, PASSWORD],
+      });
+
+      const result = await run(prompter);
+
+      expect(result.cancelled).toBe(false);
+      expect(prompter.passwords.map((p) => p.message)).toEqual([
+        "Zip password (at least 15 characters; leave empty to generate one)",
+        "Repeat the zip password",
+      ]);
+      const entries = readAesZip(readFileSync(zipPath()), PASSWORD);
+      expect(entries.map((e) => e.name)).toContain(`${FIXED_NAME}/.npmrc`);
+      const output = prompter.notes.find((n) => n.title === "Output")?.message;
+      expect(output).toContain(`zip:    ${zipPath()} (AES-256, password-protected)`);
+      expect(output).toContain("Only the zip is encrypted: the folder is not.");
+      expect(prompter.notes.find((n) => n.title === "Summary")?.message).toContain(
+        "(AES-256, password-protected)"
+      );
+    });
+
+    it("asks again for a password that is too short or not ASCII", async () => {
+      const prompter = accept({
+        confirm: [false, false, true, true],
+        multiselect: [["zip"]],
+        password: ["too short", "pässwörd with umlauts", PASSWORD, PASSWORD],
+      });
+
+      await run(prompter);
+
+      expect(prompter.passwordRejections).toEqual([
+        "The zip password must be at least 15 characters (got 9)",
+        "The zip password may contain only printable ASCII: letters, digits, punctuation and spaces (7-Zip rejects other characters)",
+      ]);
+      expect(readAesZip(readFileSync(zipPath()), PASSWORD)).toHaveLength(3);
+    });
+
+    it("starts over when the repeated password does not match, so a typo in the first can be fixed", async () => {
+      const typo = "correct horse battery stapel";
+      const prompter = accept({
+        confirm: [false, false, true, true],
+        multiselect: [["zip"]],
+        password: [typo, PASSWORD, PASSWORD, PASSWORD],
+      });
+
+      await run(prompter);
+
+      expect(prompter.passwords.map((p) => p.message)).toEqual([
+        "Zip password (at least 15 characters; leave empty to generate one)",
+        "Repeat the zip password",
+        "Zip password (at least 15 characters; leave empty to generate one)",
+        "Repeat the zip password",
+      ]);
+      expect(prompter.notes).toContainEqual({
+        title: "Zip password",
+        message: "The passwords do not match. Enter the password again.",
+      });
+      expect(readAesZip(readFileSync(zipPath()), PASSWORD)).toHaveLength(3);
+      expect(() => readAesZip(readFileSync(zipPath()), typo)).toThrow();
+    });
+
+    it("needs zipPassword when the prompter has no password prompt", async () => {
+      const prompter = accept({ confirm: [false, false, true], multiselect: [["zip"]] });
+      // A prompter written before password prompts existed.
+      const withoutPassword: Prompter = {
+        intro: (title) => prompter.intro(title),
+        outro: (message) => prompter.outro(message),
+        cancel: (message) => prompter.cancel(message),
+        note: (message, title) => prompter.note(message, title),
+        confirm: (prompt) => prompter.confirm(prompt),
+        multiselect: (prompt) => prompter.multiselect(prompt),
+        spinner: () => prompter.spinner(),
+      };
+
+      await expect(run(withoutPassword)).rejects.toThrow(
+        "This prompter cannot ask for a password: pass zipPassword to encrypt the zip"
+      );
+      expect(existsSync(out)).toBe(false);
+    });
+
+    it("generates a password when the entry is left empty and shows it once", async () => {
+      const prompter = accept({
+        confirm: [false, false, true, true, true],
+        multiselect: [["zip"]],
+        password: [""],
+      });
+
+      await run(prompter);
+
+      const note = prompter.notes.find((n) => n.title === "Generated zip password");
+      const generated = note?.message.split("\n")[0] ?? "";
+      expect(generated).toMatch(/^[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){5}$/);
+      expect(note?.message).toContain("Store it in a password manager now");
+      expect(note?.message).toContain("The entry was left empty, so this password was generated.");
+      expect(prompter.confirms.find((c) => c.message.startsWith("Have you stored it?"))).toEqual({
+        message: "Have you stored it? (No to type your own password instead)",
+        initialValue: false,
+      });
+      expect(prompter.passwords).toHaveLength(1);
+      expect(readAesZip(readFileSync(zipPath()), generated)).toHaveLength(3);
+    });
+
+    it("goes back to the entry when the generated password was not stored", async () => {
+      // "y" submits clack's confirm on its own, so an Enter typed after it arrives here as an
+      // empty entry: a user who answers No must still get to type their own password.
+      const prompter = accept({
+        confirm: [false, false, true, false, true],
+        multiselect: [["zip"]],
+        password: ["", PASSWORD, PASSWORD],
+      });
+
+      await run(prompter);
+
+      expect(prompter.notes.filter((n) => n.title === "Generated zip password")).toHaveLength(1);
+      expect(prompter.passwords.map((p) => p.message)).toEqual([
+        "Zip password (at least 15 characters; leave empty to generate one)",
+        "Zip password (at least 15 characters; leave empty to generate one)",
+        "Repeat the zip password",
+      ]);
+      expect(readAesZip(readFileSync(zipPath()), PASSWORD)).toHaveLength(3);
+    });
+
+    it("uses a supplied password without asking, and rejects a weak one", async () => {
+      const prompter = accept({ confirm: [false, false, true, true], multiselect: [["zip"]] });
+
+      await run(prompter, { zipPassword: () => PASSWORD });
+
+      expect(prompter.passwords).toEqual([]);
+      expect(prompter.notes.map((n) => n.title)).toContain("Zip password");
+      expect(readAesZip(readFileSync(zipPath()), PASSWORD)).toHaveLength(3);
+
+      const weak = accept({ confirm: [false, false, true], multiselect: [["zip"]] });
+      await expect(run(weak, { zipPassword: "weak" })).rejects.toThrow("at least 15 characters");
+    });
+
+    it("pre-fills protection from the option or encrypt_zip, even when the default format is folder", async () => {
+      createFile(home, ".dotfilesrc.toml", "[settings]\nencrypt_zip = true");
+      const fromConfig = accept({ confirm: [false, false, false, true], multiselect: [["zip"]] });
+      await run(fromConfig);
+      expect(fromConfig.confirms.find((c) => c.message === PROTECT)?.initialValue).toBe(true);
+
+      rmSync(out, { recursive: true, force: true });
+      const fromOption = accept({ confirm: [false, false, false, true], multiselect: [["zip"]] });
+      await run(fromOption, {
+        encryptZip: true,
+        config: { include: [], exclude: [], settings: {} },
+      });
+      expect(fromOption.confirms.find((c) => c.message === PROTECT)?.initialValue).toBe(true);
+      // Answering No wins over the default.
+      expect(Object.keys(unzipSync(readFileSync(zipPath())))).toContain(`${FIXED_NAME}/.zshrc`);
+    });
+
+    it("does not ask for a password in a dry run", async () => {
+      const prompter = accept({ confirm: [false, false, true, true], multiselect: [["zip"]] });
+
+      const result = await run(prompter, { dryRun: true });
+
+      expect(prompter.passwords).toEqual([]);
+      expect(result.cancelled).toBe(false);
+      expect(prompter.notes.find((n) => n.title === "Dry run")?.message).toContain(
+        "(AES-256, password-protected)"
+      );
+      expect(existsSync(out)).toBe(false);
+    });
+
+    it.each([
+      ["the protection question", { confirm: [false, false, CANCEL], multiselect: [["zip"]] }],
+      [
+        "the password",
+        { confirm: [false, false, true], multiselect: [["zip"]], password: [CANCEL] },
+      ],
+      [
+        "the repeated password",
+        { confirm: [false, false, true], multiselect: [["zip"]], password: [PASSWORD, CANCEL] },
+      ],
+      [
+        "the stored-password question",
+        { confirm: [false, false, true, CANCEL], multiselect: [["zip"]], password: [""] },
+      ],
+    ] as [string, Script][])("cancelling at %s writes nothing", async (_step, script) => {
+      const prompter = new FakePrompter(script);
+
+      const result = await run(prompter);
+
+      expect(result).toEqual({ cancelled: true });
+      expect(prompter.cancelMessage).toBe("Cancelled.");
+      expect(existsSync(out)).toBe(false);
+    });
   });
 
   it("reports when no default targets exist", async () => {

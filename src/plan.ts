@@ -58,13 +58,19 @@ export interface Plan {
   homeDir: string;
   outDir: string;
   formats: OutputFormat[];
+  /** Whether the zip is encrypted (AES-256); only ever true when a zip is written. */
+  encryptZip: boolean;
   includeEnv: boolean;
   includeConfig: boolean;
   maxFileSizeMb: number;
   config: DotfilesConfig;
   /** Whose default targets were attempted; see {@link PlanOptions.platform}. */
   platform: TargetPlatform;
-  /** Files are staged here first; removed afterwards unless `folder` is a selected format. */
+  /**
+   * The collection folder. Files are staged here first and it is removed afterwards unless
+   * `folder` is a selected format; an encrypted zip without the folder is staged in a private
+   * temporary directory instead (see `writePlan`).
+   */
   stagingDir: string;
   outputs: PlanOutputs;
   /** The selected outputs, in folder/zip/tar order. */
@@ -248,6 +254,7 @@ function buildPlan(scanResult: ScanResult, resolved: ResolvedOptions): Plan {
     homeDir: resolved.homeDir,
     outDir: resolved.outDir,
     formats: resolved.formats,
+    encryptZip: resolved.encryptZip,
     includeEnv: resolved.includeEnv,
     includeConfig: resolved.includeConfig,
     maxFileSizeMb: resolved.maxFileSizeMb,
@@ -271,21 +278,28 @@ export function resolveTargets(options: PlanOptions = {}): Plan {
 
 export type PlanOverrides = Pick<
   PlanOptions,
-  "includeEnv" | "includeConfig" | "formats" | "outDir" | "now"
+  "includeEnv" | "includeConfig" | "formats" | "encryptZip" | "outDir" | "now"
 >;
 
 /**
  * Narrows an existing plan to different groups, formats or output directory without scanning
  * again. Files, missing targets and failures are all filtered by group, so the result is the
- * same as a fresh plan made with those options.
+ * same as a fresh plan made with those options. Without an `encryptZip` override a plan that
+ * wrote a zip keeps its own choice for as long as it still does; one that wrote none leaves it to
+ * the config's `encrypt_zip`, as a fresh plan would.
  */
 export function filterPlan(plan: Plan, overrides: PlanOverrides): Plan {
+  const formats = overrides.formats ?? plan.formats;
   const resolved = resolveOptions({
     homeDir: plan.homeDir,
     outDir: overrides.outDir ?? plan.outDir,
     includeEnv: overrides.includeEnv ?? plan.includeEnv,
     includeConfig: overrides.includeConfig ?? plan.includeConfig,
-    formats: overrides.formats ?? plan.formats,
+    formats,
+    // A plan that wrote a zip made its own choice; one that did not leaves it to the config.
+    encryptZip:
+      overrides.encryptZip ??
+      (plan.formats.includes("zip") ? formats.includes("zip") && plan.encryptZip : undefined),
     maxFileSizeMb: plan.maxFileSizeMb,
     now: overrides.now,
     config: plan.config,
