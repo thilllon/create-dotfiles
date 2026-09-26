@@ -136,18 +136,28 @@ npx create-dotfiles --dry-run       # show the plan, write nothing
 npx create-dotfiles restore         # put the newest collection back (never overwrites)
 ```
 
-Or install it:
+Or install it with Homebrew (macOS or Linux; brings its own Node). Tap and trust once per machine:
 
 ```shell
-brew install thilllon/tap/create-dotfiles   # Homebrew on macOS or Linux; brings its own Node
-npm i -g create-dotfiles                     # also pnpm add -g / yarn global add; Node 22 or newer
+brew tap thilllon/tap
+brew trust thilllon/tap
+brew install create-dotfiles
 ```
 
-The Homebrew formula lives in [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap)
-and follows npm on its own, usually within a few hours of a release. Homebrew only loads formulae
-from trusted taps: the full `thilllon/tap/create-dotfiles` name above trusts this one; after a
-plain `brew tap thilllon/tap`, run `brew trust thilllon/tap` once to use the short name. In a
-`Brewfile`, write `brew "thilllon/tap/create-dotfiles", trusted: true`.
+After that, `brew install create-dotfiles` and `brew upgrade create-dotfiles` work by name.
+Homebrew 6 and later load formulae only from taps you trust, which is what `brew trust` is for.
+`brew install thilllon/tap/create-dotfiles` does the same in one command, trusting just this
+formula. In a `Brewfile`:
+
+```ruby
+tap "thilllon/tap", trusted: true
+brew "create-dotfiles"
+```
+
+The formula lives in [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap) and follows
+npm on its own, usually within a few hours of a release.
+
+Or with npm: `npm i -g create-dotfiles` (also `pnpm add -g` / `yarn global add`). Node 22 or newer.
 
 ### Flags
 

@@ -117,7 +117,8 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   package gets a new patch version with no human involved. Major bumps stay open for review.
 - `release.yml` declares `concurrency: release`, so two dispatches queue instead of racing for the
   same version.
-- **Homebrew** (`brew install thilllon/tap/create-dotfiles`): the formula lives in
+- **Homebrew** (`brew tap thilllon/tap && brew trust thilllon/tap`, then
+  `brew install create-dotfiles`): the formula lives in
   [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap), and nothing in this repository
   pushes to it. The tap's `bump.yml` polls npm every three hours; for a newer version it verifies
   the tarball's npm provenance (signed by this repository's `release.yml` running on `main`),
