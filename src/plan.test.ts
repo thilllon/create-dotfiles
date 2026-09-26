@@ -793,17 +793,52 @@ describe("filterPlan", () => {
 
     for (const includeEnv of [false, true]) {
       for (const includeConfig of [false, true]) {
-        const options = { includeEnv, includeConfig, formats: ["zip", "tar"] as const };
-        const fresh = resolveTargets({
-          homeDir: home,
-          now: FIXED_DATE,
-          platform: TEST_PLATFORM,
-          ...options,
-        });
+        for (const encryptZip of [false, true]) {
+          const options = {
+            includeEnv,
+            includeConfig,
+            encryptZip,
+            formats: ["zip", "tar"] as const,
+          };
+          const fresh = resolveTargets({
+            homeDir: home,
+            now: FIXED_DATE,
+            platform: TEST_PLATFORM,
+            ...options,
+          });
 
-        expect(filterPlan(full, { ...options, now: FIXED_DATE })).toEqual(fresh);
+          expect(filterPlan(full, { ...options, now: FIXED_DATE })).toEqual(fresh);
+        }
       }
     }
+  });
+
+  it("keeps the plan's zip encryption while a zip is still written, and drops it otherwise", () => {
+    const encrypted = resolveTargets({
+      homeDir: home,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      formats: ["zip"],
+      encryptZip: true,
+    });
+
+    expect(filterPlan(encrypted, { formats: ["zip", "tar"] }).encryptZip).toBe(true);
+    expect(filterPlan(encrypted, { formats: ["folder"] }).encryptZip).toBe(false);
+    expect(filterPlan(encrypted, { encryptZip: false }).encryptZip).toBe(false);
+    expect(() => filterPlan(encrypted, { formats: ["tar"], encryptZip: true })).toThrow(
+      'Encrypting the zip needs "zip" among the output formats (got tar)'
+    );
+  });
+
+  it("leaves encryption to encrypt_zip when a zip is added to a plan that had none", () => {
+    const config = parseConfig("[settings]\nencrypt_zip = true", home);
+    const options = { homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM, config };
+    const folderOnly = resolveTargets({ ...options, formats: ["folder"] });
+
+    const zipped = filterPlan(folderOnly, { formats: ["zip"], now: FIXED_DATE });
+
+    expect(zipped.encryptZip).toBe(true);
+    expect(zipped).toEqual(resolveTargets({ ...options, formats: ["zip"] }));
   });
 
   it("recomputes the name and outputs for the new timestamp and formats", () => {

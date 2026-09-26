@@ -17,9 +17,9 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
 - **Runtime**: Node.js 24 (pinned exactly in `mise.toml`; CI also runs 22 and 26 on Ubuntu, and 24 on Windows and macOS)
 - **Toolchain manager**: mise — `mise.toml` pins node, pnpm and lefthook; `mise run <task>` mirrors the pnpm scripts and `mise run ci` runs the whole CI job locally
 - **Package Manager**: pnpm 11 (`pnpm-workspace.yaml` approves the build scripts pnpm 11 would otherwise reject)
-- **Language**: TypeScript 6 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
-- **Bundler**: tsdown 0.22 (config: `tsdown.config.mts`, two entries); everything is bundled, so the published package has no runtime dependencies
-- **CLI parsing**: cac 7. **Prompts**: `@clack/prompts` (ESM-only; bundled). **Archives**: `tar`, `yazl`
+- **Language**: TypeScript 7 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
+- **Bundler**: tsdown 0.23 (config: `tsdown.config.mts`, two entries); everything is bundled, so the published package has no runtime dependencies
+- **CLI parsing**: cac 7. **Prompts**: `@clack/prompts` (ESM-only; bundled). **Archives**: `tar`, `yazl`, and `@zip.js/zip.js` for AES-256 zips only (pinned exactly; imported lazily from `lib/zip-core-custom.js`, so it is a separate chunk in `dist/` that plain runs never load)
 - **Linter/Formatter**: Biome 2.5 (double quotes, semicolons, 2-space indent, 100 line width)
 - **Test**: Vitest 4 + `@vitest/coverage-v8` (the two must stay on identical versions); `fflate` is used only in tests to read zips
 - **Git hooks**: lefthook, installed by the `prepare` script on `pnpm install`
@@ -45,9 +45,11 @@ src/
   report.ts            # summary, "found on this machine" and "never copied" formatting
   restore.ts           # restore(), findLatestCollection()
   errors.ts            # DotfileError
+  zip-password.ts      # zip password policy, generator, and the CREATE_DOTFILES_ZIP_PASSWORD(_FILE) readers
   test-helpers.ts      # shared fixtures for tests
+  test-aes-zip.ts      # test-only WinZip AES reader on node:crypto, independent of zip.js
   *.test.ts            # colocated tests; cli.test.ts spawns the CLI with HOME/USERPROFILE in a temp dir
-dist/                  # cli.cjs (bin), index.cjs, index.d.cts
+dist/                  # cli.cjs (bin), index.cjs, index.d.cts, and zip-core-custom-*.cjs chunks (zip.js, loaded only to encrypt)
 .github/
   workflows/
     ci.yml                        # push/PR: lint, typecheck, test with coverage, build (ubuntu x Node 22/24/26, windows + macos on 24)
@@ -165,12 +167,43 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   as failures and skipped; the scan never throws (`plan.errors.test.ts` simulates them).
 - **Symlinks are followed at every level** when copying (`walk.ts`), with loop detection, so a
   stow-style setup is captured as real files and the archive is self-contained.
-- **Outputs**: files are always staged into the timestamped folder; zip and tar.gz are written from
-  the staging folder; when `folder` is not among the requested formats the staging folder is removed
-  afterwards (also on failure). An existing output path is an error, never merged into.
+- **Outputs**: files are staged into the timestamped folder; zip and tar.gz are written from the
+  staged copies; when `folder` is not among the requested formats the staging folder is removed
+  afterwards (also on failure). An encrypted zip without `folder` is staged in a private `mkdtemp`
+  directory (0700) under the OS temp dir instead, so no plaintext copy ever reaches the output
+  directory; `CollectProgress.stagingDir` names the directory actually used. An existing output
+  path is an error, never merged into. A failed archive's stream is torn down by
+  `discardOutput`: it waits for 'close' (a pending open would otherwise re-create the file) and
+  ignores the follow-on ERR_STREAM_DESTROYED, so the partial file is removed and the original
+  error is reported.
 - **Failures are per file**: one unreadable file is reported in the summary and the run continues.
+- **Encrypted zip** (`--encrypt-zip`, `encrypt_zip`, library `encryptZip` + `zipPassword`):
+  - Format: WinZip AES-256, AE-2 (method 99, extra field 0x9901, CRC stored as 0), written by zip.js;
+    unencrypted zips stay on yazl. Entries are added one at a time from `createReadStream` with an
+    explicit size: concurrent adds buffer in memory, and `fs.openAsBlob` misreports sizes over 4 GiB.
+  - The password is settled in `writePlan` before anything is written. It is validated by
+    `zipPasswordProblem`: 15-99 printable ASCII characters. 15 is the NIST single-factor floor;
+    ASCII-only and 99 are 7-Zip's limits.
+  - A string `zipPassword` for a plan that does not encrypt is an error, never a silently
+    unprotected zip. A function source is called only when the zip is really encrypted, which is
+    how the CLI reads the environment lazily.
+  - `encryptZip: true` without zip among the formats is an error. The config's `encrypt_zip` is
+    ignored when no zip is written.
+  - Password sources: a terminal run always prompts, masked and twice; a mismatch goes back to the
+    first entry. An empty entry generates a 150-bit Crockford-base32 password, used only after
+    "Have you stored it?"; answering No goes back to the entry. clack's confirm submits on "y", so a
+    following Enter lands on the password prompt as an empty entry. `--auto` and non-TTY read only
+    `CREATE_DOTFILES_ZIP_PASSWORD` or `CREATE_DOTFILES_ZIP_PASSWORD_FILE` (setting both is an error;
+    a UTF-8 BOM in the file is dropped). There is never an argv flag with the password, and never a
+    password in the config. `--encrypt-zip` rejects any value: cac does not treat dashed flags as
+    boolean, and `--encrypt-zip ""` would otherwise arrive as 0 and turn encryption off.
+  - `Prompter.password` is optional, so a custom prompter written before it still compiles; choosing
+    encryption with such a prompter and no `zipPassword` is a DotfileError.
+  - The summary marks the zip "(AES-256, password-protected)". It warns that a folder or tar.gz
+    from the same run is not encrypted.
 - **Config file** `~/.dotfilesrc.toml` is optional and never created. `[files] include`/`exclude`
-  and `[settings]` (`include_env`, `include_config`, `formats`, `max_file_size_mb`, `out`) are
+  and `[settings]` (`include_env`, `include_config`, `encrypt_zip`, `formats`, `max_file_size_mb`,
+  `out`) are
   validated: entries must be non-empty strings, relative, and confined to the home directory, and
   are then normalized (`./x`, `a/../b`, trailing slashes) so the spelling never reaches archive
   entry names — yazl rejects `..` segments. Error messages still quote what the user wrote. A
@@ -193,6 +226,7 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
 [settings]
 include_env = true
 include_config = false
+encrypt_zip = false          # AES-256 zip; the password is never read from this file
 formats = ["folder", "zip"]
 max_file_size_mb = 10
 out = "~/Backups"
@@ -242,6 +276,10 @@ exclude = [".config/kitty", "Snapshots"]    # paths or directory names to exclud
 - The interactive flow is tested through a fake `Prompter`; `clack-prompter.ts` is tested with
   `@clack/prompts` mocked. No test drives a real TTY
 - Zip contents are verified by reading the central directory with `fflate`; tar contents with
-  `tar.list`
+  `tar.list`. Encrypted zips are decrypted by `test-aes-zip.ts`, written from the WinZip AE-x spec
+  on node:crypto (PBKDF2, verifier, HMAC-SHA1-80, little-endian AES-CTR). It never trusts zip.js to
+  check its own output. It also asserts AES-256, AE-2 and a zero CRC, so a zip.js update cannot
+  silently weaken the format. Dependabot's minor/patch auto-merge bumps zip.js too; this test is
+  what gates it
 - CLI tests point `HOME` and `USERPROFILE` at a temp directory; never let a test touch the real
   home directory

@@ -33,6 +33,7 @@ describe("loadConfig", () => {
         "max_file_size_mb = 25",
         "include_env = true",
         "include_config = true",
+        "encrypt_zip = true",
         'formats = ["zip", "tar.gz"]',
         'out = "~/backups"',
       ].join("\n")
@@ -45,6 +46,7 @@ describe("loadConfig", () => {
         maxFileSizeMb: 25,
         includeEnv: true,
         includeConfig: true,
+        encryptZip: true,
         formats: ["zip", "tar"],
         out: "~/backups",
       },
@@ -156,6 +158,11 @@ describe("parseConfig", () => {
       "a non-boolean include_config",
       "[settings]\ninclude_config = 1",
       /include_config must be true/,
+    ],
+    [
+      "a non-boolean encrypt_zip",
+      '[settings]\nencrypt_zip = "yes"',
+      /encrypt_zip must be true or false/,
     ],
     ["a non-array formats", '[settings]\nformats = "zip"', /formats must be an array/],
     ["a formats array with non-strings", "[settings]\nformats = [1]", /formats must be an array/],

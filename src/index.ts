@@ -24,6 +24,7 @@ export {
   type InteractiveOptions,
   type InteractiveResult,
   type MultiselectPrompt,
+  type PasswordPrompt,
   type Prompter,
   runInteractive,
   type SelectOption,
@@ -56,6 +57,7 @@ export {
   formatNeverCopied,
   formatRestoreSummary,
   formatSummary,
+  outputEncryptionNote,
 } from "./report";
 export {
   findLatestCollection,
@@ -84,3 +86,15 @@ export {
   type TargetSpec,
   targetsFor,
 } from "./targets";
+export {
+  assertZipPassword,
+  generateZipPassword,
+  MAX_ZIP_PASSWORD_LENGTH,
+  MIN_ZIP_PASSWORD_LENGTH,
+  requireZipPasswordFromEnv,
+  ZIP_PASSWORD_ENV,
+  ZIP_PASSWORD_FILE_ENV,
+  type ZipPasswordSource,
+  zipPasswordFromEnv,
+  zipPasswordProblem,
+} from "./zip-password";

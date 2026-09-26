@@ -2,7 +2,7 @@ import * as clack from "@clack/prompts";
 import { CANCEL, type MultiselectPrompt, type Prompter } from "./interactive";
 
 /** Adapts @clack/prompts to the {@link Prompter} interface the interactive flow uses. */
-export function createClackPrompter(): Prompter {
+export function createClackPrompter(): Required<Prompter> {
   return {
     intro: (title) => clack.intro(title),
     outro: (message) => clack.outro(message),
@@ -19,6 +19,16 @@ export function createClackPrompter(): Prompter {
       // type parameter, so the call is made with `string` and narrowed back afterwards.
       const answer = await clack.multiselect<string>(prompt);
       return clack.isCancel(answer) ? CANCEL : (answer as T[]);
+    },
+
+    async password(prompt) {
+      const { validate } = prompt;
+      const answer = await clack.password({
+        message: prompt.message,
+        // clack hands an empty entry to the validator as undefined.
+        validate: validate === undefined ? undefined : (value) => validate(value ?? ""),
+      });
+      return clack.isCancel(answer) ? CANCEL : (answer ?? "");
     },
 
     spinner() {

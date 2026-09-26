@@ -22,6 +22,12 @@ export interface PlanOptions {
   includeConfig?: boolean;
   /** Output formats. Default `["folder"]`. */
   formats?: readonly OutputFormat[];
+  /**
+   * Encrypt the zip with WinZip AES-256; writing then needs `zipPassword`. Defaults to
+   * `settings.encrypt_zip`, then false. `true` without `zip` among the formats is an error; the
+   * config setting is simply ignored when no zip is written.
+   */
+  encryptZip?: boolean;
   /** Files larger than this are skipped and reported. Default 10. */
   maxFileSizeMb?: number;
   /** Timestamp for the `dotfiles-YYYYMMDD-HHMMSS` name. Defaults to now. */
@@ -41,6 +47,8 @@ export interface ResolvedOptions {
   includeEnv: boolean;
   includeConfig: boolean;
   formats: OutputFormat[];
+  /** True only when a zip is written and it is to be encrypted. */
+  encryptZip: boolean;
   maxFileSizeMb: number;
   now: Date;
   config: DotfilesConfig;
@@ -70,12 +78,21 @@ export function resolveOptions(options: PlanOptions = {}): ResolvedOptions {
   const rawOut = options.outDir ?? settings.out;
   const outDir = rawOut === undefined ? homeDir : resolve(homeDir, expandHome(rawOut, homeDir));
 
+  const formats = parseFormats(options.formats ?? settings.formats ?? DEFAULT_FORMATS);
+  const writesZip = formats.includes("zip");
+  if (options.encryptZip === true && !writesZip) {
+    throw new DotfileError(
+      `Encrypting the zip needs "zip" among the output formats (got ${formats.join(", ")})`
+    );
+  }
+
   return {
     homeDir,
     outDir,
     includeEnv: options.includeEnv ?? settings.includeEnv ?? true,
     includeConfig: options.includeConfig ?? settings.includeConfig ?? false,
-    formats: parseFormats(options.formats ?? settings.formats ?? DEFAULT_FORMATS),
+    formats,
+    encryptZip: writesZip && (options.encryptZip ?? settings.encryptZip ?? false),
     maxFileSizeMb,
     now: options.now ?? new Date(),
     config,

@@ -16,6 +16,7 @@ vi.mock("@clack/prompts", async (importOriginal) => {
     note: vi.fn(),
     confirm: vi.fn(),
     multiselect: vi.fn(),
+    password: vi.fn(),
     spinner: vi.fn(),
   };
 });
@@ -71,6 +72,36 @@ describe("createClackPrompter", () => {
     await expect(prompter.multiselect(prompt)).resolves.toEqual(["zip", "tar"]);
     await expect(prompter.multiselect(prompt)).resolves.toBe(CANCEL);
     expect(mocked.multiselect).toHaveBeenCalledWith(prompt);
+  });
+
+  it('returns password entries, turning an empty entry into "" and cancel into CANCEL', async () => {
+    mocked.password
+      .mockResolvedValueOnce("correct horse battery staple")
+      .mockResolvedValueOnce(undefined as unknown as string)
+      .mockResolvedValueOnce(CLACK_CANCEL);
+    const prompter = createClackPrompter();
+
+    await expect(prompter.password({ message: "Zip password" })).resolves.toBe(
+      "correct horse battery staple"
+    );
+    await expect(prompter.password({ message: "Zip password" })).resolves.toBe("");
+    await expect(prompter.password({ message: "Zip password" })).resolves.toBe(CANCEL);
+    expect(mocked.password).toHaveBeenCalledWith({ message: "Zip password", validate: undefined });
+  });
+
+  it('hands the password validator "" for an empty entry, as the Prompter contract says', async () => {
+    mocked.password.mockResolvedValueOnce("x");
+    const validate = vi.fn((value: string) => (value === "" ? "empty" : undefined));
+
+    await createClackPrompter().password({ message: "Zip password", validate });
+
+    // clack types validate as a function or a Standard Schema; the adapter always passes a function.
+    const passed = mocked.password.mock.calls[0][0].validate as (
+      value: string | undefined
+    ) => string | undefined;
+    expect(passed?.(undefined)).toBe("empty");
+    expect(passed?.("long enough")).toBeUndefined();
+    expect(validate.mock.calls).toEqual([[""], ["long enough"]]);
   });
 
   it("drives a clack spinner", () => {
