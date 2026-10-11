@@ -50,7 +50,7 @@ jobs:
           # Persisted in the checkout so release-it's `git push` of the version commit
           # and the tag goes out with a token that may push to main.
           token: ${{ secrets.RELEASE_TOKEN }}
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           cache: true
       # Trusted Publishing needs npm >= 11.5.1; the npm bundled with the Node pinned in
