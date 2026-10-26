@@ -79,11 +79,11 @@ never-copied rules.
 
 Three ways to run it. They are the same program; pick by how you like your tools delivered.
 
-| | Command afterwards | Updates | Needs |
-| --- | --- | --- | --- |
-| [Homebrew](#homebrew) (macOS, Linux) | `create-dotfiles` | `brew upgrade create-dotfiles` | Homebrew (it brings its own Node) |
-| [npm](#npm) | `create-dotfiles` | `npm i -g create-dotfiles` again | Node 22 or newer |
-| [npx](#no-install-npx), no install | `npx create-dotfiles` | automatic (`@latest` to be sure) | Node 22 or newer |
+|                                      | Command afterwards    | Updates                          | Needs                             |
+| ------------------------------------ | --------------------- | -------------------------------- | --------------------------------- |
+| [Homebrew](#homebrew) (macOS, Linux) | `create-dotfiles`     | `brew upgrade create-dotfiles`   | Homebrew (it brings its own Node) |
+| [npm](#npm)                          | `create-dotfiles`     | `npm i -g create-dotfiles` again | Node 22 or newer                  |
+| [npx](#no-install-npx), no install   | `npx create-dotfiles` | automatic (`@latest` to be sure) | Node 22 or newer                  |
 
 ### Homebrew
 
@@ -199,18 +199,18 @@ home-relative path, so the folder is a faithful mirror and the archives restore 
 
 ## Features
 
-|                               |                                                                                                                                                                                         |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **▸ Zero setup**              | No config file needed. Built-in targets cover shells, Git, Vim/Neovim, tmux, terminal emulators, Starship, fish, mise, VS Code and Cursor, and more — with the right paths on macOS, Linux and Windows. |
-| **▸ Interactive or scripted** | A terminal gets prompts; `--auto` gets defaults. Piped or in CI, it falls back to `--auto` on its own.                                                                                   |
-| **▸ Timestamped, faithful**   | `~/dotfiles-YYYYMMDD-HHMMSS/` mirrors home-relative paths. Get a folder, a zip, a tar.gz, or all three in one run.                                                                       |
+|                               |                                                                                                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **▸ Zero setup**              | No config file needed. Built-in targets cover shells, Git, Vim/Neovim, tmux, terminal emulators, Starship, fish, mise, VS Code and Cursor, and more — with the right paths on macOS, Linux and Windows.             |
+| **▸ Interactive or scripted** | A terminal gets prompts; `--auto` gets defaults. Piped or in CI, it falls back to `--auto` on its own.                                                                                                              |
+| **▸ Timestamped, faithful**   | `~/dotfiles-YYYYMMDD-HHMMSS/` mirrors home-relative paths. Get a folder, a zip, a tar.gz, or all three in one run.                                                                                                  |
 | **▸ Secrets in, keys out**    | `.env` files (found by a bounded scan), `.npmrc`, `.netrc`, `.aws/credentials`, `.docker/config.json` are included by default; `--no-include-env` leaves them out. SSH and GPG private keys are never copied, ever. |
-| **▸ Encrypted zip**           | `--encrypt-zip` protects the zip with WinZip AES-256 (AE-2). The password comes from a hidden prompt, or is generated for you (150 bits); never from the command line. |
-| **▸ Never copies junk**       | `node_modules`, `.git`, caches, previous collections and files over 10 MB are skipped — and the skips are reported, not hidden.                                                          |
-| **▸ Symlinks resolved**       | A stow-style symlinked `~/.config/nvim` is copied as real files, at every level, so nothing in the archive points back at a machine you no longer have.                                 |
-| **▸ Safe restore**            | `restore` puts the newest collection back without overwriting anything unless you pass `--force`.                                                                                       |
-| **▸ Dry run**                 | `--dry-run` prints exactly what would be copied, with sizes and groups, and writes nothing.                                                                                              |
-| **▸ Typed library**           | `import { collect, restore } from "create-dotfiles"` ships with full TypeScript declarations and zero runtime dependencies.                                                             |
+| **▸ Encrypted zip**           | `--encrypt-zip` protects the zip with WinZip AES-256 (AE-2). The password comes from a hidden prompt, or is generated for you (150 bits); never from the command line.                                              |
+| **▸ Never copies junk**       | `node_modules`, `.git`, caches, previous collections and files over 10 MB are skipped — and the skips are reported, not hidden.                                                                                     |
+| **▸ Symlinks resolved**       | A stow-style symlinked `~/.config/nvim` is copied as real files, at every level, so nothing in the archive points back at a machine you no longer have.                                                             |
+| **▸ Safe restore**            | `restore` puts the newest collection back without overwriting anything unless you pass `--force`.                                                                                                                   |
+| **▸ Dry run**                 | `--dry-run` prints exactly what would be copied, with sizes and groups, and writes nothing.                                                                                                                         |
+| **▸ Typed library**           | `import { collect, restore } from "create-dotfiles"` ships with full TypeScript declarations and zero runtime dependencies.                                                                                         |
 
 ## Usage
 
@@ -228,16 +228,16 @@ create-dotfiles restore         # put the newest collection back (never overwrit
 
 Every flag works with `--auto` and, in interactive mode, pre-fills the corresponding question.
 
-| Flag                     | Default   | Effect                                                                                     |
-| ------------------------ | --------- | ------------------------------------------------------------------------------------------ |
-| `--auto`                 | off       | Run without prompts.                                                                       |
-| `--include-env`          | on        | Include the secrets group (`.env` files and the credential files listed above). `--no-include-env` turns it off. |
-| `--include-config`       | off       | Include everything under `~/.config`, minus the never-copied rules.                        |
-| `--format <list>`        | `folder`  | Comma-separated subset of `folder`, `zip`, `tar` (`tar.gz` and `tgz` are accepted).        |
-| `--out <dir>`            | `~`       | Parent directory for the output. `~/` is expanded.                                          |
-| `--max-file-size <mb>`   | `10`      | Skip files larger than this; they are listed in the summary.                               |
-| `--dry-run`              | off       | Print the plan and the output paths without writing anything.                              |
-| `--encrypt-zip`          | off       | Encrypt the zip with AES-256; see [Password-protected zip](#password-protected-zip). `--no-encrypt-zip` overrides the config. |
+| Flag                   | Default  | Effect                                                                                                                        |
+| ---------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `--auto`               | off      | Run without prompts.                                                                                                          |
+| `--include-env`        | on       | Include the secrets group (`.env` files and the credential files listed above). `--no-include-env` turns it off.              |
+| `--include-config`     | off      | Include everything under `~/.config`, minus the never-copied rules.                                                           |
+| `--format <list>`      | `folder` | Comma-separated subset of `folder`, `zip`, `tar` (`tar.gz` and `tgz` are accepted).                                           |
+| `--out <dir>`          | `~`      | Parent directory for the output. `~/` is expanded.                                                                            |
+| `--max-file-size <mb>` | `10`     | Skip files larger than this; they are listed in the summary.                                                                  |
+| `--dry-run`            | off      | Print the plan and the output paths without writing anything.                                                                 |
+| `--encrypt-zip`        | off      | Encrypt the zip with AES-256; see [Password-protected zip](#password-protected-zip). `--no-encrypt-zip` overrides the config. |
 
 `--help` and `--version` never read or write anything in your home directory.
 
@@ -335,7 +335,7 @@ If `~/.dotfilesrc.toml` exists it is read; it is never created for you.
 [settings]
 include_env = true
 include_config = false
-encrypt_zip = false        # the password is never read from this file
+encrypt_zip = false # the password is never read from this file
 formats = ["folder", "zip"]
 max_file_size_mb = 10
 out = "~/Backups"
@@ -381,15 +381,15 @@ pnpm install          # also installs the git hooks
 pnpm dev              # run src/cli.ts with tsx
 ```
 
-| Script               | What it does                                                          |
-| -------------------- | --------------------------------------------------------------------- |
-| `pnpm test`          | Vitest                                                                |
-| `pnpm test:coverage` | Vitest with the coverage thresholds enforced                          |
-| `pnpm lint`          | Biome check                                                           |
-| `pnpm format`        | Biome check `--write`                                                 |
-| `pnpm typecheck`     | `tsc --noEmit`                                                        |
+| Script               | What it does                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `pnpm test`          | Vitest                                                                                             |
+| `pnpm test:coverage` | Vitest with the coverage thresholds enforced                                                       |
+| `pnpm lint`          | oxlint (warnings fail) and `oxfmt --check`                                                         |
+| `pnpm format`        | oxfmt                                                                                              |
+| `pnpm typecheck`     | `tsc --noEmit`                                                                                     |
 | `pnpm build`         | tsdown → `dist/cli.cjs`, `dist/index.cjs`, `dist/index.d.cts`, plus the lazily loaded zip.js chunk |
-| `mise run ci`        | The whole CI job locally, with `CI=true`                              |
+| `mise run ci`        | The whole CI job locally, with `CI=true`                                                           |
 
 Releases are automated: dependabot's minor and patch updates are merged and published as soon as CI is green, and releases run only from GitHub Actions with npm Trusted Publishing. The Homebrew tap picks up each npm release by itself after checking its provenance. See [AGENTS.md](AGENTS.md) for the details.
 

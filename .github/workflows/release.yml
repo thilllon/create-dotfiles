@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ['ubuntu-latest']
+    runs-on: ["ubuntu-latest"]
     env:
       # release-it commits and pushes; without this the pre-commit hook would reformat
       # mid-release and pre-push would rerun the whole test suite.
