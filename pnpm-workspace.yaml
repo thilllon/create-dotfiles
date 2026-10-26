@@ -1,7 +1,3 @@
-# pnpm >= 11 exits non-zero on unapproved build scripts, so every dependency that
-# runs one is approved here explicitly.
 allowBuilds:
-  esbuild: true # transitive build dependency; postinstall fetches its platform binary
-  lefthook: true # postinstall links the prebuilt binary from its platform package
-minimumReleaseAgeExclude:
-  - '@types/node@26.4.1'
+  esbuild: true
+  lefthook: true
