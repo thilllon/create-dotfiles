@@ -15,11 +15,11 @@ description = "Install dependencies exactly as CI does"
 run = "pnpm install --frozen-lockfile"
 
 [tasks.lint]
-description = "Biome check (no writes)"
+description = "oxlint (warnings fail) and oxfmt --check (no writes)"
 run = "pnpm lint"
 
 [tasks.format]
-description = "Biome check --write"
+description = "oxfmt (writes)"
 run = "pnpm format"
 
 [tasks.typecheck]

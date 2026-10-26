@@ -20,7 +20,10 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
 - **Language**: TypeScript 7 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
 - **Bundler**: tsdown 0.23 (config: `tsdown.config.mts`, two entries); everything is bundled, so the published package has no runtime dependencies
 - **CLI parsing**: cac 7. **Prompts**: `@clack/prompts` (ESM-only; bundled). **Archives**: `tar`, `yazl`, and `@zip.js/zip.js` for AES-256 zips only (pinned exactly; imported lazily from `lib/zip-core-custom.js`, so it is a separate chunk in `dist/` that plain runs never load)
-- **Linter/Formatter**: Biome 2.5 (double quotes, semicolons, 2-space indent, 100 line width)
+- **Linter**: oxlint 1 (`.oxlintrc.json`: `correctness` as errors; `pnpm lint` passes `--deny-warnings`)
+- **Formatter**: oxfmt 0.74 (`.oxfmtrc.json`: double quotes, semicolons, 2-space indent, 100 line
+  width, ES5 trailing commas, sorted imports without blank lines between groups, sorted `package.json`).
+  Both configs point `$schema` at `node_modules`, so the schema always matches the installed version
 - **Test**: Vitest 4 + `@vitest/coverage-v8` (the two must stay on identical versions); `fflate` is used only in tests to read zips
 - **Git hooks**: lefthook, installed by the `prepare` script on `pnpm install`
 - **Release**: release-it 21 from `.github/workflows/release.yml`, publishing with npm Trusted Publishing (OIDC)
@@ -66,8 +69,8 @@ lefthook.yml            # pre-commit: format; pre-push: lint, typecheck, test, b
 pnpm build          # Build with tsdown
 pnpm test           # Run tests with vitest
 pnpm test:coverage  # Run tests with coverage thresholds enforced
-pnpm lint           # Lint with biome
-pnpm format         # Format with biome
+pnpm lint           # oxlint (warnings fail) + oxfmt --check
+pnpm format         # Format with oxfmt
 pnpm typecheck      # tsc --noEmit
 pnpm dev            # Run source directly with tsx
 mise run ci         # The full CI job locally, with CI=true (tools escalate warnings in CI)
@@ -226,14 +229,14 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
 [settings]
 include_env = true
 include_config = false
-encrypt_zip = false          # AES-256 zip; the password is never read from this file
+encrypt_zip = false # AES-256 zip; the password is never read from this file
 formats = ["folder", "zip"]
 max_file_size_mb = 10
 out = "~/Backups"
 
 [files]
-include = [".config/foo", "work/scripts"]   # extra paths, relative to the home directory
-exclude = [".config/kitty", "Snapshots"]    # paths or directory names to exclude
+include = [".config/foo", "work/scripts"] # extra paths, relative to the home directory
+exclude = [".config/kitty", "Snapshots"] # paths or directory names to exclude
 ```
 
 ## Platforms

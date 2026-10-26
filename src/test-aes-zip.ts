@@ -43,7 +43,7 @@ function ctrXor(key: Buffer, data: Buffer): Buffer {
 }
 
 function extraField(extra: Buffer, id: number): Buffer | undefined {
-  for (let p = 0; p + 4 <= extra.length; ) {
+  for (let p = 0; p + 4 <= extra.length;) {
     const size = extra.readUInt16LE(p + 2);
     if (extra.readUInt16LE(p) === id) return extra.subarray(p + 4, p + 4 + size);
     p += 4 + size;
