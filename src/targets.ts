@@ -278,7 +278,7 @@ export const SSH_PUBLIC_KEY_SUFFIX = ".pub";
 
 /** GnuPG: the private key store, and keyrings / key boxes (with or without a `~` backup suffix). */
 export const GNUPG_DIR = ".gnupg";
-export const GNUPG_PRIVATE_KEYS_DIR = "private-keys-v1.d";
+export const GNUPG_PRIVATE_KEYS_DIR = "private-keys-v1.d"; // gitleaks:allow (a directory name)
 export const GNUPG_KEYRING_PATTERN = /\.(gpg|kbx)~?$/;
 
 /** `dotfiles-YYYYMMDD-HHMMSS`, the name of every collection folder this tool writes. */

@@ -1,0 +1,4 @@
+# Findings already in history that are not secrets. The current tree marks such lines
+# with a `gitleaks:allow` comment instead; history cannot be edited, so it is listed here.
+# GNUPG_PRIVATE_KEYS_DIR, a directory name that the generic-api-key rule matches.
+802aa0b0e0653752743a26b07f0392afde8f312e:src/targets.ts:generic-api-key:190

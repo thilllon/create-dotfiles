@@ -15,7 +15,7 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
 ## Tech Stack
 
 - **Runtime**: Node.js 24 (pinned exactly in `mise.toml`; CI also runs 22 and 26 on Ubuntu, and 24 on Windows and macOS)
-- **Toolchain manager**: mise — `mise.toml` pins node, pnpm and lefthook; `mise run <task>` mirrors the pnpm scripts and `mise run ci` runs the whole CI job locally
+- **Toolchain manager**: mise — `mise.toml` pins node, pnpm, lefthook and gitleaks; `mise run <task>` mirrors the pnpm scripts and `mise run ci` runs the whole CI job locally
 - **Package Manager**: pnpm 11 (`pnpm-workspace.yaml` approves the build scripts pnpm 11 would otherwise reject)
 - **Language**: TypeScript 7 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
 - **Bundler**: tsdown 0.23 (config: `tsdown.config.mts`, two entries); everything is bundled, so the published package has no runtime dependencies
@@ -26,6 +26,8 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
   Both configs point `$schema` at `node_modules`, so the schema always matches the installed version
 - **Test**: Vitest 4 + `@vitest/coverage-v8` (the two must stay on identical versions); `fflate` is used only in tests to read zips
 - **Git hooks**: lefthook, installed by the `prepare` script on `pnpm install`
+- **Secret scanning**: gitleaks 8 (pinned in `mise.toml`) on staged changes in pre-commit and on the
+  checked-out tree in CI
 - **Release**: release-it 21 from `.github/workflows/release.yml`, publishing with npm Trusted Publishing (OIDC)
 - **CI/CD**: GitHub Actions — see "CI and releases"
 
@@ -60,7 +62,8 @@ dist/                  # cli.cjs (bin), index.cjs, index.d.cts, and zip-core-cus
     dependabot-auto-release.yml   # after CI on a dependabot PR: merge minor/patch, dispatch release.yml
   dependabot.yml                  # weekly, grouped minor+patch, for npm and github-actions
 mise.toml               # tool pins + tasks
-lefthook.yml            # pre-commit: format; pre-push: lint, typecheck, test, build
+lefthook.yml            # pre-commit: format, gitleaks; pre-push: lint, typecheck, test, build
+.gitleaksignore         # fingerprints of non-secret findings already in history
 ```
 
 ## Key Commands
@@ -92,12 +95,15 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
 - `main` is protected (pull requests required). The maintainer pushes directly as an admin;
   GITHUB_TOKEN cannot, which is why the release workflow pushes its version commit with the
   maintainer's `RELEASE_TOKEN` (see below)
-- lefthook runs `pnpm format` on pre-commit and lint/typecheck/test/build on pre-push. CI and the
-  release job set `LEFTHOOK=0`
+- lefthook runs `pnpm format` and `gitleaks git --pre-commit --staged` on pre-commit and
+  lint/typecheck/test/build on pre-push. CI and the release job set `LEFTHOOK=0`
+- A gitleaks false positive in the tree gets a `gitleaks:allow` comment on its line; one already in
+  history goes into `.gitleaksignore` by fingerprint. Never allowlist a real secret: rotate it
 
 ## CI and releases
 
-- **CI** (`ci.yml`) runs on every push to `main` and every pull request: `pnpm lint`,
+- **CI** (`ci.yml`) runs on every push to `main` and every pull request: `gitleaks dir` (before
+  `pnpm install`, so only tracked files are scanned), `pnpm lint`,
   `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, on Ubuntu with Node 22, 24 and 26 and on
   Windows and macOS with Node 24 (`fail-fast: false`, steps under `shell: bash`). `mise run ci` runs the
   same sequence locally with `CI=true`; that flag matters because some tools (tsdown, for one) treat

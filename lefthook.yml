@@ -7,6 +7,10 @@ pre-commit:
     format:
       run: pnpm format
       stage_fixed: true
+    # gitleaks comes from mise.toml (`mise install`). CI scans the tree too, so a commit made
+    # with --no-verify is still caught before it can merge.
+    secrets:
+      run: gitleaks git --pre-commit --staged --redact --no-banner
 
 pre-push:
   parallel: true

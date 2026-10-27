@@ -33,6 +33,10 @@ jobs:
           cache: true
         env:
           MISE_NODE_VERSION: ${{ matrix.node-version }}
+      # Before the install, so only the checked-out (tracked) files are scanned, not node_modules.
+      - name: Scan for secrets
+        run: gitleaks dir --redact --no-banner .
+        shell: bash
       - run: pnpm install --frozen-lockfile
         shell: bash
       - run: pnpm lint
