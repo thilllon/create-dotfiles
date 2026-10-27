@@ -1,41 +1,53 @@
+# npm Trusted Publishing is registered for this workflow filename, and the Homebrew tap's
+# provenance check pins it (SOURCE_WORKFLOW in thilllon/homebrew-tap's bump.yml). Never rename or
+# move this file, and publish only from here.
 name: Release
 
+# Every push to main runs this, and decides from the state of the pushed commit:
+#   - the newest chore(release): v<x> commit is not on npm -> publish that commit and tag v<x>
+#   - it is on npm but has no v<x> tag                      -> tag it
+#   - the pushed commit is still the head of main and has
+#     pending changesets (Dependabot's are written here)    -> `changeset version`, push
+#                                                              chore(release): v<y>
+# Docs, CI and tooling merges carry no changeset and release nothing. The release commit is pushed
+# with RELEASE_TOKEN, so it starts a run of its own, which publishes it. Publishing always checks
+# out the release commit itself, never a later commit, so what is on npm is exactly what that
+# commit's CHANGELOG describes. workflow_dispatch reruns the same decision, e.g. after a failure.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to publish. Default: latest on npm + one patch."
-        required: false
-        type: string
 
-# Queue concurrent releases instead of running them in parallel. Two runs started from
-# the same main would both bump to the same version; the second would then fail at
-# npm publish. This matters once dependabot-auto-release.yml dispatches releases.
+# Runs queue instead of racing for the same version. GitHub keeps one pending run per group and
+# cancels an older pending one. That is safe: the newer commit contains the older one, and the
+# decision above is made from the commit's history, not from the event that started the run.
 concurrency:
   group: release
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   release:
-    runs-on: ["ubuntu-latest"]
+    # A dispatch from another branch must never publish that branch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     env:
-      # release-it commits and pushes; without this the pre-commit hook would reformat
-      # mid-release and pre-push would rerun the whole test suite.
+      # The release commit is made here; the hooks would reformat it and rerun the test suite.
       LEFTHOOK: 0
     permissions:
       contents: write
-      # Required for npm Trusted Publishing (OIDC): npm exchanges this short-lived
-      # token for publish rights, so no NPM_TOKEN secret is needed. The package must
-      # also be registered on npmjs.com with this repository and workflow as a
-      # trusted publisher, otherwise `npm publish` is rejected.
+      # Required for npm Trusted Publishing (OIDC): npm exchanges this short-lived token for
+      # publish rights and signs provenance, so there is no NPM_TOKEN secret.
       id-token: write
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
     steps:
-      # main is protected (pull requests required). GITHUB_TOKEN can never bypass that
-      # (GH006), so the version-bump commit is pushed with RELEASE_TOKEN: a fine-grained
-      # personal access token of a maintainer whose pushes bypass the rule (repository
-      # admin), scoped to this repository with "Contents: Read and write". It is checked
-      # before anything runs so that a missing token cannot leave npm published and git
-      # not bumped, which is exactly the drift this token exists to prevent.
+      # main is protected and GITHUB_TOKEN can never push to it (GH006), so the release commit and
+      # the tag are pushed with RELEASE_TOKEN: a fine-grained personal access token of a repository
+      # admin, scoped to this repository with Contents: Read and write. A push made with it, unlike
+      # one made with GITHUB_TOKEN, starts workflows, which is what publishes the release commit.
       - name: Check RELEASE_TOKEN
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -47,54 +59,117 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          # Persisted in the checkout so release-it's `git push` of the version commit
-          # and the tag goes out with a token that may push to main.
           token: ${{ secrets.RELEASE_TOKEN }}
       - uses: jdx/mise-action@v4
         with:
           cache: true
-      # Trusted Publishing needs npm >= 11.5.1; the npm bundled with the Node pinned in
-      # mise.toml satisfies that. Printed so a publish failure is easy to diagnose.
-      # There is no reason to upgrade npm here; an earlier `npm install -g npm@latest`
-      # step broke the release on an engines mismatch.
-      - run: npm --version
-      - run: pnpm install --frozen-lockfile
-      # release-it commits the version bump and tags it; the runner has no git identity
-      # by default, so without this the run dies at "Author identity unknown" AFTER
-      # npm publish has already succeeded, leaving npm ahead of git.
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      # The next version is latest-on-npm + one patch unless given explicitly. npm is the
-      # reference so that a stale package.json can never make release-it try to publish a
-      # version that already exists. release-it rewrites package.json, builds, publishes,
-      # commits "chore(release): v<version>", tags it and pushes both, so the version on
-      # main matches npm after every release. That push runs CI on main; it cannot start
-      # another release, because this workflow only runs on workflow_dispatch.
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REQUESTED: ${{ inputs.version }}
+
+      - name: Decide what to publish or tag
+        id: decide
         run: |
-          LATEST=$(npm view create-dotfiles version)
-          if [ -n "$REQUESTED" ]; then
-            NEXT="$REQUESTED"
-          else
-            NEXT=$(node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); console.log(`${a}.${b}.${c+1}`)' "$LATEST")
+          VERSION=$(node -p 'require("./package.json").version')
+          # Only a release commit changes the version, so this finds the commit that set it. The
+          # subject is matched exactly; --grep would also match a line in some other commit's body.
+          RELEASE_SHA=$(git log --format='%H %s' HEAD |
+            awk -v subject="chore(release): v$VERSION" 'substr($0, 42) == subject { print $1; exit }')
+          if [ -z "$RELEASE_SHA" ]; then
+            echo "::error::No chore(release): v$VERSION commit is reachable from $GITHUB_SHA."
+            exit 1
           fi
-          echo "npm has $LATEST; releasing $NEXT"
-          pnpm release --ci "$NEXT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # npm answers 404 for a version it does not have. Any other failure stops the run, so a
+          # registry outage is never mistaken for an unpublished version.
+          if OUT=$(npm view "create-dotfiles@$VERSION" version 2>&1); then
+            if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+              echo "create-dotfiles@$VERSION is published and tagged."
+            else
+              echo "create-dotfiles@$VERSION is published but v$VERSION is missing: tagging $RELEASE_SHA."
+              echo "tag=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+            fi
+          elif grep -q E404 <<< "$OUT"; then
+            echo "create-dotfiles@$VERSION is not on npm: publishing $RELEASE_SHA."
+            echo "publish=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "$OUT" >&2
+            exit 1
+          fi
+
+      - name: Publish the release commit
+        id: publish
+        if: steps.decide.outputs.publish != ''
+        env:
+          RELEASE_SHA: ${{ steps.decide.outputs.publish }}
+          VERSION: ${{ steps.decide.outputs.version }}
+          # changeset publish runs `pnpm publish`, which reads PNPM_CONFIG_* (not NPM_CONFIG_*).
+          # Provenance is required so a publish without it fails here instead of being silently
+          # rejected later by the Homebrew tap, which only takes a version built here.
+          PNPM_CONFIG_PROVENANCE: "true"
+        run: |
+          git checkout --quiet --detach "$RELEASE_SHA"
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+          # Publishes the versions npm lacks (this package's) and tags each v<version> at HEAD.
+          pnpm exec changeset publish
+          git rev-parse --quiet --verify "refs/tags/v$VERSION" > /dev/null
+          git push origin "v$VERSION"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the published release commit
+        if: steps.decide.outputs.tag != ''
+        env:
+          RELEASE_SHA: ${{ steps.decide.outputs.tag }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          git tag --annotate "v$VERSION" --message "v$VERSION" "$RELEASE_SHA"
+          git push origin "v$VERSION"
+
+      # Bumps package.json and writes CHANGELOG.md from the pending changesets, which it deletes.
+      # The pushed commit starts the run that publishes it.
+      - name: Version pending changesets
+        run: |
+          git checkout --quiet --detach "$GITHUB_SHA"
+          git fetch --quiet origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo "main has moved past $GITHUB_SHA; the run for the newer commit versions it."
+            exit 0
+          fi
+          # Dependabot cannot write changesets. Every dependency is bundled into dist/, so each npm
+          # update Dependabot merged since the last release commit is released as a patch. The
+          # file name makes this idempotent, and the scan does not depend on which run gets here.
+          LAST=$(git log --format='%H %s' HEAD | awk 'substr($0, 42) ~ /^chore\(release\): v/ { print $1; exit }')
+          for COMMIT in $(git log --format=%h --author='^dependabot\[bot\]' "$LAST..HEAD" -- package.json pnpm-lock.yaml); do
+            printf -- '---\n"create-dotfiles": patch\n---\n\n%s\n' "$(git log -1 --format=%s "$COMMIT")" \
+              > ".changeset/dependabot-$COMMIT.md"
+            echo "Wrote a patch changeset for Dependabot's $COMMIT."
+          done
+          if [ -z "$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md -print -quit)" ]; then
+            echo "No pending changesets: nothing to version."
+            exit 0
+          fi
+          pnpm install --frozen-lockfile
+          pnpm exec changeset version
+          pnpm format
+          VERSION=$(node -p 'require("./package.json").version')
+          git add --all
+          git commit --message "chore(release): v$VERSION"
+          git push origin HEAD:main
 
   # Homebrew follows npm on its own: bump.yml in thilllon/homebrew-tap polls npm on a schedule
   # and commits each new version. GitHub disables a public repository's scheduled workflows after
   # 60 days without activity. The tap's bump commits count as activity, so that only happens after
   # a long gap between releases, and then this release would silently never reach Homebrew. This
-  # job fails and opens an issue that mentions the owner: a release dispatched by
-  # dependabot-auto-release.yml is triggered by github-actions[bot], so a failed run alone notifies
+  # job fails and opens an issue that mentions the owner, because a failed run alone may notify
   # nobody. It runs after the release job, so it cannot affect what was published.
   homebrew:
     needs: release
+    if: needs.release.outputs.published == 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write

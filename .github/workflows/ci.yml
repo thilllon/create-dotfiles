@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        # Node 20 is EOL and excluded by tsdown 0.22, release-it 21 and pnpm 11.
+        # Node 20 is EOL and excluded by tsdown 0.22 and pnpm 11.
         node-version: [22, 24, 26]
         # The pinned Node once each on Windows and macOS: paths, symlinks/junctions, file locks
         # and case-insensitive file systems are what differ there, not the Node version.
