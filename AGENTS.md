@@ -28,7 +28,7 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
 - **Git hooks**: lefthook, installed by the `prepare` script on `pnpm install`
 - **Secret scanning**: gitleaks 8 (pinned in `mise.toml`) on staged changes in pre-commit and on the
   checked-out tree in CI
-- **Release**: release-it 21 from `.github/workflows/release.yml`, publishing with npm Trusted Publishing (OIDC)
+- **Release**: Changesets 3 (`.changeset/`) from `.github/workflows/release.yml` on every push to `main`, publishing with npm Trusted Publishing (OIDC)
 - **CI/CD**: GitHub Actions — see "CI and releases"
 
 ## Project Structure
@@ -58,8 +58,8 @@ dist/                  # cli.cjs (bin), index.cjs, index.d.cts, and zip-core-cus
 .github/
   workflows/
     ci.yml                        # push/PR: lint, typecheck, test with coverage, build (ubuntu x Node 22/24/26, windows + macos on 24)
-    release.yml                   # workflow_dispatch: publish to npm, push the version tag
-    dependabot-auto-release.yml   # after CI on a dependabot PR: merge minor/patch, dispatch release.yml
+    release.yml                   # push to main: version pending changesets, or publish and tag
+    dependabot-auto-merge.yml     # after CI on a dependabot PR: merge grouped minor/patch with RELEASE_TOKEN
   dependabot.yml                  # weekly, grouped minor+patch, for npm and github-actions
 mise.toml               # tool pins + tasks
 lefthook.yml            # pre-commit: format, gitleaks; pre-push: lint, typecheck, test, build
@@ -79,7 +79,7 @@ pnpm dev            # Run source directly with tsx
 mise run ci         # The full CI job locally, with CI=true (tools escalate warnings in CI)
 ```
 
-Do not run `pnpm release` locally: releases happen only in CI (see below).
+Releases happen only in CI (see below): never run `changeset version` or `changeset publish` locally.
 
 ## Code Conventions
 
@@ -108,26 +108,34 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   Windows and macOS with Node 24 (`fail-fast: false`, steps under `shell: bash`). `mise run ci` runs the
   same sequence locally with `CI=true`; that flag matters because some tools (tsdown, for one) treat
   warnings as errors only in CI.
-- **Releases** are made only by `release.yml` (workflow_dispatch). npm Trusted Publishing is
-  registered for that workflow file, so publishing from anywhere else is rejected. There is no
-  NPM_TOKEN. release-it runs with `npm.skipChecks` because its `npm whoami` pre-flight cannot work
-  under OIDC.
-- **The version on `main` matches npm after every release.** The workflow reads the latest
-  version from npm, adds one patch (or takes the `version` input for a minor/major bump), and
-  runs `release-it --ci <version>`, which rewrites `package.json`, builds, publishes, commits
-  `chore(release): v<version>`, tags it and pushes both. npm is used as the reference only so a
-  stale `package.json` can never cause a publish of a version that already exists.
-- **`RELEASE_TOKEN` is required.** GITHUB_TOKEN cannot push to the protected `main` (GH006), so
-  the release checkout uses `RELEASE_TOKEN`, a fine-grained personal access token of a repository
-  admin scoped to this repository with Contents: Read and write. The workflow fails before doing
-  anything if the secret is missing, so it can never publish to npm without also committing. The
-  push made with that token runs CI on `main`; it cannot start another release, because
-  `release.yml` only runs on `workflow_dispatch`.
+- **Versions come from Changesets.** A PR that changes what users get from npm (code, bundled
+  dependencies, CLI output) adds a changeset (`pnpm changeset`) naming the bump and the line for
+  `CHANGELOG.md`; the agent implementing the change writes it as part of the PR. A PR without one
+  (docs, CI, tests, tooling) releases nothing. Commit messages never decide versions.
+- **A merge to `main` releases.** `release.yml` runs on every push to `main` and decides from the
+  state of that commit, in this order: if `package.json`'s version is not on npm, it runs
+  lint/typecheck/test/build and `changeset publish`, which publishes and tags `v<version>`; else,
+  if `main` has already moved on, it does nothing (the newer run handles it); else, if changesets
+  are pending, it runs `changeset version` and `pnpm format` and pushes
+  `chore(release): v<version>` to `main`. That push starts the run that publishes, so what is
+  published is exactly the release commit, and the version on `main` matches npm afterwards.
+  `workflow_dispatch` (on `main` only) reruns the same decision, e.g. after a failed publish.
+- **Publishing is only from `release.yml`.** npm Trusted Publishing is registered for that
+  workflow file, so publishing from anywhere else is rejected. There is no NPM_TOKEN; the OIDC
+  publication also signs the provenance the Homebrew tap checks. Never publish locally.
+- **`RELEASE_TOKEN` is required.** GITHUB_TOKEN cannot push to the protected `main` (GH006), and
+  its pushes and merges start no workflows. The release checkout and the Dependabot merge
+  therefore use `RELEASE_TOKEN`, a fine-grained personal access token of a repository admin
+  scoped to this repository with Contents: Read and write (enough for the REST merge too). The release job fails before doing anything if the secret is missing.
 - **Dependabot**: minor and patch updates arrive weekly as one grouped PR per ecosystem.
-  `dependabot-auto-release.yml` merges such a PR once CI is green and dispatches a release, so the
-  package gets a new patch version with no human involved. Major bumps stay open for review.
-- `release.yml` declares `concurrency: release`, so two dispatches queue instead of racing for the
-  same version.
+  `dependabot-auto-merge.yml` merges such a PR with `RELEASE_TOKEN` once CI has passed on its
+  exact head. Dependabot cannot write changesets, so `release.yml` writes a patch changeset when the
+  pushed commit is Dependabot's and changes `package.json` or `pnpm-lock.yaml` (every dependency
+  is bundled into `dist/`); a GitHub Actions update releases nothing. Major bumps stay open for
+  review; merging one by hand releases a patch the same way.
+- `release.yml` declares `concurrency: release`: runs queue instead of racing for a version.
+  GitHub cancels an older pending run when a newer one queues, which is safe because the decision
+  is made from the commit, and a newer commit contains the older one.
 - **Homebrew** (`brew tap thilllon/tap && brew trust thilllon/tap`, then
   `brew install create-dotfiles`): the formula lives in
   [thilllon/homebrew-tap](https://github.com/thilllon/homebrew-tap), and nothing in this repository
@@ -140,8 +148,7 @@ Do not run `pnpm release` locally: releases happen only in CI (see below).
   a long release drought (past gaps between releases were 192 and 489 days). If it happens,
   `release.yml`'s `homebrew` job fails and opens an issue here that mentions the owner, with the
   fix: `gh workflow enable bump.yml -R thilllon/homebrew-tap && gh workflow run bump.yml -R
-  thilllon/homebrew-tap`. The issue is what reaches a human: a release dispatched by
-  `dependabot-auto-release.yml` runs as github-actions[bot], so its failure alone notifies nobody.
+  thilllon/homebrew-tap`. The issue is what reaches a human: a failed run alone may notify nobody.
   The tap uses no keepalive trick, because GitHub has disabled a keepalive action for bypassing
   that policy.
 - The tap's provenance check pins the publisher. Renaming `release.yml` requires updating

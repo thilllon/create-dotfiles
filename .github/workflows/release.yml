@@ -1,41 +1,49 @@
+# npm Trusted Publishing is registered for this workflow filename, and the Homebrew tap's
+# provenance check pins it (SOURCE_WORKFLOW in thilllon/homebrew-tap's bump.yml). Never rename or
+# move this file, and publish only from here.
 name: Release
 
+# Every push to main runs this. What it does depends on the state of that commit:
+#   - package.json's version is not on npm yet  -> publish it (the run for a release commit)
+#   - pending changesets in .changeset/          -> `changeset version`, push chore(release): v<x>
+#   - neither                                    -> nothing (docs, CI and tooling merges)
+# The release commit is pushed with RELEASE_TOKEN, so it starts a run of its own, which publishes
+# exactly that commit. workflow_dispatch reruns the same decision, e.g. after a failed publish.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to publish. Default: latest on npm + one patch."
-        required: false
-        type: string
 
-# Queue concurrent releases instead of running them in parallel. Two runs started from
-# the same main would both bump to the same version; the second would then fail at
-# npm publish. This matters once dependabot-auto-release.yml dispatches releases.
+# Runs queue instead of racing for the same version. GitHub keeps one pending run per group and
+# cancels an older pending one; that is safe, because the newer commit contains the older one and
+# the decision above is made from the state of the commit, not from the event.
 concurrency:
   group: release
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   release:
-    runs-on: ["ubuntu-latest"]
+    # A dispatch from another branch must never publish that branch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     env:
-      # release-it commits and pushes; without this the pre-commit hook would reformat
-      # mid-release and pre-push would rerun the whole test suite.
+      # The release commit is made here; the hooks would reformat it and rerun the test suite.
       LEFTHOOK: 0
     permissions:
       contents: write
-      # Required for npm Trusted Publishing (OIDC): npm exchanges this short-lived
-      # token for publish rights, so no NPM_TOKEN secret is needed. The package must
-      # also be registered on npmjs.com with this repository and workflow as a
-      # trusted publisher, otherwise `npm publish` is rejected.
+      # Required for npm Trusted Publishing (OIDC): npm exchanges this short-lived token for
+      # publish rights and signs provenance, so there is no NPM_TOKEN secret.
       id-token: write
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
     steps:
-      # main is protected (pull requests required). GITHUB_TOKEN can never bypass that
-      # (GH006), so the version-bump commit is pushed with RELEASE_TOKEN: a fine-grained
-      # personal access token of a maintainer whose pushes bypass the rule (repository
-      # admin), scoped to this repository with "Contents: Read and write". It is checked
-      # before anything runs so that a missing token cannot leave npm published and git
-      # not bumped, which is exactly the drift this token exists to prevent.
+      # main is protected and GITHUB_TOKEN can never push to it (GH006), so the release commit and
+      # the tag are pushed with RELEASE_TOKEN: a fine-grained personal access token of a repository
+      # admin, scoped to this repository with Contents: Read and write. A push made with it, unlike
+      # one made with GITHUB_TOKEN, starts workflows, which is what publishes the release commit.
       - name: Check RELEASE_TOKEN
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -47,54 +55,85 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          # Persisted in the checkout so release-it's `git push` of the version commit
-          # and the tag goes out with a token that may push to main.
           token: ${{ secrets.RELEASE_TOKEN }}
       - uses: jdx/mise-action@v4
         with:
           cache: true
-      # Trusted Publishing needs npm >= 11.5.1; the npm bundled with the Node pinned in
-      # mise.toml satisfies that. Printed so a publish failure is easy to diagnose.
-      # There is no reason to upgrade npm here; an earlier `npm install -g npm@latest`
-      # step broke the release on an engines mismatch.
-      - run: npm --version
       - run: pnpm install --frozen-lockfile
-      # release-it commits the version bump and tags it; the runner has no git identity
-      # by default, so without this the run dies at "Author identity unknown" AFTER
-      # npm publish has already succeeded, leaving npm ahead of git.
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      # The next version is latest-on-npm + one patch unless given explicitly. npm is the
-      # reference so that a stale package.json can never make release-it try to publish a
-      # version that already exists. release-it rewrites package.json, builds, publishes,
-      # commits "chore(release): v<version>", tags it and pushes both, so the version on
-      # main matches npm after every release. That push runs CI on main; it cannot start
-      # another release, because this workflow only runs on workflow_dispatch.
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REQUESTED: ${{ inputs.version }}
+
+      - name: Decide what this commit needs
+        id: decide
         run: |
-          LATEST=$(npm view create-dotfiles version)
-          if [ -n "$REQUESTED" ]; then
-            NEXT="$REQUESTED"
-          else
-            NEXT=$(node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); console.log(`${a}.${b}.${c+1}`)' "$LATEST")
+          VERSION=$(node -p 'require("./package.json").version')
+          if [ -z "$(npm view "create-dotfiles@$VERSION" version 2>/dev/null)" ]; then
+            echo "create-dotfiles@$VERSION is not on npm yet: publishing it."
+            echo "mode=publish" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          echo "npm has $LATEST; releasing $NEXT"
-          pnpm release --ci "$NEXT"
+          git fetch --quiet origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo "main has moved past $GITHUB_SHA; the run for the newer commit versions it."
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Dependabot cannot write changesets. Every dependency here is bundled into dist/, so an
+          # npm update merged from Dependabot is released as a patch on its behalf.
+          if [ "$(git log -1 --format=%an)" = "dependabot[bot]" ] &&
+            ! git diff --quiet HEAD^ HEAD -- package.json pnpm-lock.yaml; then
+            SUBJECT=$(git log -1 --format=%s)
+            printf -- '---\n"create-dotfiles": patch\n---\n\n%s\n' "$SUBJECT" \
+              > ".changeset/dependabot-$(git rev-parse --short HEAD).md"
+            echo "Wrote a patch changeset for: $SUBJECT"
+          fi
+          if [ -n "$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md -print -quit)" ]; then
+            echo "Pending changesets: versioning."
+            echo "mode=version" >> "$GITHUB_OUTPUT"
+          else
+            echo "create-dotfiles@$VERSION is published and nothing is pending: nothing to release."
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Bumps package.json and writes CHANGELOG.md from the changesets, which it deletes. The
+      # pushed commit starts the run that publishes it.
+      - name: Version
+        if: steps.decide.outputs.mode == 'version'
+        run: |
+          pnpm exec changeset version
+          pnpm format
+          VERSION=$(node -p 'require("./package.json").version')
+          git add --all
+          git commit --message "chore(release): v$VERSION"
+          git push origin HEAD:main
+
+      - name: Check
+        if: steps.decide.outputs.mode == 'publish'
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+      # Publishes every version not yet on npm (this package's, here) and tags it v<version>.
+      - name: Publish
+        id: publish
+        if: steps.decide.outputs.mode == 'publish'
+        run: |
+          pnpm exec changeset publish
+          git push origin --tags
+          echo "published=true" >> "$GITHUB_OUTPUT"
 
   # Homebrew follows npm on its own: bump.yml in thilllon/homebrew-tap polls npm on a schedule
   # and commits each new version. GitHub disables a public repository's scheduled workflows after
   # 60 days without activity. The tap's bump commits count as activity, so that only happens after
   # a long gap between releases, and then this release would silently never reach Homebrew. This
-  # job fails and opens an issue that mentions the owner: a release dispatched by
-  # dependabot-auto-release.yml is triggered by github-actions[bot], so a failed run alone notifies
+  # job fails and opens an issue that mentions the owner, because a failed run alone may notify
   # nobody. It runs after the release job, so it cannot affect what was published.
   homebrew:
     needs: release
+    if: needs.release.outputs.published == 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write

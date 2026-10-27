@@ -391,7 +391,7 @@ pnpm dev              # run src/cli.ts with tsx
 | `pnpm build`         | tsdown → `dist/cli.cjs`, `dist/index.cjs`, `dist/index.d.cts`, plus the lazily loaded zip.js chunk |
 | `mise run ci`        | The whole CI job locally, with `CI=true`                                                           |
 
-Releases are automated: dependabot's minor and patch updates are merged and published as soon as CI is green, and releases run only from GitHub Actions with npm Trusted Publishing. The Homebrew tap picks up each npm release by itself after checking its provenance. See [AGENTS.md](AGENTS.md) for the details.
+Releases are automated: a pull request that changes the package adds a changeset (`pnpm changeset`), and merging it to `main` versions and publishes it from GitHub Actions with npm Trusted Publishing. Dependabot's minor and patch updates are merged and released as a patch as soon as CI is green. The Homebrew tap picks up each npm release by itself after checking its provenance. See [AGENTS.md](AGENTS.md) for the details.
 
 ## License
 
