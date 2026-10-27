@@ -113,13 +113,14 @@ Releases happen only in CI (see below): never run `changeset version` or `change
   `CHANGELOG.md`; the agent implementing the change writes it as part of the PR. A PR without one
   (docs, CI, tests, tooling) releases nothing. Commit messages never decide versions.
 - **A merge to `main` releases.** `release.yml` runs on every push to `main` and decides from the
-  state of that commit, in this order: if `package.json`'s version is not on npm, it runs
-  lint/typecheck/test/build and `changeset publish`, which publishes and tags `v<version>`; else,
-  if `main` has already moved on, it does nothing (the newer run handles it); else, if changesets
-  are pending, it runs `changeset version` and `pnpm format` and pushes
-  `chore(release): v<version>` to `main`. That push starts the run that publishes, so what is
-  published is exactly the release commit, and the version on `main` matches npm afterwards.
-  `workflow_dispatch` (on `main` only) reruns the same decision, e.g. after a failed publish.
+  pushed commit's history. The newest `chore(release): v<x>` commit is the release commit: if npm
+  lacks `<x>` (a 404; any other npm error fails the run), it checks out that commit, runs
+  lint/typecheck/test/build and `changeset publish` (provenance required), and pushes tag `v<x>`;
+  if npm has `<x>` but the tag is missing, it tags that commit. Then, if the pushed commit is still
+  the head of `main` and changesets are pending, it runs `changeset version` and `pnpm format` and
+  pushes `chore(release): v<y>`, whose own run publishes it. Publishing never uses a later commit,
+  so npm, the tag and `CHANGELOG.md` always describe the same tree, even when runs are cancelled
+  or a merge lands mid-release. `workflow_dispatch` (on `main` only) reruns the same decision.
 - **Publishing is only from `release.yml`.** npm Trusted Publishing is registered for that
   workflow file, so publishing from anywhere else is rejected. There is no NPM_TOKEN; the OIDC
   publication also signs the provenance the Homebrew tap checks. Never publish locally.
@@ -128,11 +129,12 @@ Releases happen only in CI (see below): never run `changeset version` or `change
   therefore use `RELEASE_TOKEN`, a fine-grained personal access token of a repository admin
   scoped to this repository with Contents: Read and write (enough for the REST merge too). The release job fails before doing anything if the secret is missing.
 - **Dependabot**: minor and patch updates arrive weekly as one grouped PR per ecosystem.
-  `dependabot-auto-merge.yml` merges such a PR with `RELEASE_TOKEN` once CI has passed on its
-  exact head. Dependabot cannot write changesets, so `release.yml` writes a patch changeset when the
-  pushed commit is Dependabot's and changes `package.json` or `pnpm-lock.yaml` (every dependency
-  is bundled into `dist/`); a GitHub Actions update releases nothing. Major bumps stay open for
-  review; merging one by hand releases a patch the same way.
+  `dependabot-auto-merge.yml` merges the npm group with `RELEASE_TOKEN`, through the REST API and
+  only at the head CI passed on, so the push starts `release.yml`. Dependabot cannot write
+  changesets, so `release.yml` writes a patch changeset for every Dependabot commit since the last
+  release commit that changes `package.json` or `pnpm-lock.yaml` (every dependency is bundled into
+  `dist/`). The GitHub Actions group and major bumps stay open for review: an Actions update edits
+  `.github/workflows/`, which needs a Workflows token permission, and releases nothing.
 - `release.yml` declares `concurrency: release`: runs queue instead of racing for a version.
   GitHub cancels an older pending run when a newer one queues, which is safe because the decision
   is made from the commit, and a newer commit contains the older one.

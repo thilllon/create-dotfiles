@@ -3,20 +3,24 @@
 # move this file, and publish only from here.
 name: Release
 
-# Every push to main runs this. What it does depends on the state of that commit:
-#   - package.json's version is not on npm yet  -> publish it (the run for a release commit)
-#   - pending changesets in .changeset/          -> `changeset version`, push chore(release): v<x>
-#   - neither                                    -> nothing (docs, CI and tooling merges)
-# The release commit is pushed with RELEASE_TOKEN, so it starts a run of its own, which publishes
-# exactly that commit. workflow_dispatch reruns the same decision, e.g. after a failed publish.
+# Every push to main runs this, and decides from the state of the pushed commit:
+#   - the newest chore(release): v<x> commit is not on npm -> publish that commit and tag v<x>
+#   - it is on npm but has no v<x> tag                      -> tag it
+#   - the pushed commit is still the head of main and has
+#     pending changesets (Dependabot's are written here)    -> `changeset version`, push
+#                                                              chore(release): v<y>
+# Docs, CI and tooling merges carry no changeset and release nothing. The release commit is pushed
+# with RELEASE_TOKEN, so it starts a run of its own, which publishes it. Publishing always checks
+# out the release commit itself, never a later commit, so what is on npm is exactly what that
+# commit's CHANGELOG describes. workflow_dispatch reruns the same decision, e.g. after a failure.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 # Runs queue instead of racing for the same version. GitHub keeps one pending run per group and
-# cancels an older pending one; that is safe, because the newer commit contains the older one and
-# the decision above is made from the state of the commit, not from the event.
+# cancels an older pending one. That is safe: the newer commit contains the older one, and the
+# decision above is made from the commit's history, not from the event that started the run.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -59,71 +63,103 @@ jobs:
       - uses: jdx/mise-action@v4
         with:
           cache: true
-      - run: pnpm install --frozen-lockfile
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Decide what this commit needs
+      - name: Decide what to publish or tag
         id: decide
         run: |
           VERSION=$(node -p 'require("./package.json").version')
-          if [ -z "$(npm view "create-dotfiles@$VERSION" version 2>/dev/null)" ]; then
-            echo "create-dotfiles@$VERSION is not on npm yet: publishing it."
-            echo "mode=publish" >> "$GITHUB_OUTPUT"
-            exit 0
+          # Only a release commit changes the version, so this finds the commit that set it. The
+          # subject is matched exactly; --grep would also match a line in some other commit's body.
+          RELEASE_SHA=$(git log --format='%H %s' HEAD |
+            awk -v subject="chore(release): v$VERSION" 'substr($0, 42) == subject { print $1; exit }')
+          if [ -z "$RELEASE_SHA" ]; then
+            echo "::error::No chore(release): v$VERSION commit is reachable from $GITHUB_SHA."
+            exit 1
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # npm answers 404 for a version it does not have. Any other failure stops the run, so a
+          # registry outage is never mistaken for an unpublished version.
+          if OUT=$(npm view "create-dotfiles@$VERSION" version 2>&1); then
+            if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+              echo "create-dotfiles@$VERSION is published and tagged."
+            else
+              echo "create-dotfiles@$VERSION is published but v$VERSION is missing: tagging $RELEASE_SHA."
+              echo "tag=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+            fi
+          elif grep -q E404 <<< "$OUT"; then
+            echo "create-dotfiles@$VERSION is not on npm: publishing $RELEASE_SHA."
+            echo "publish=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "$OUT" >&2
+            exit 1
+          fi
+
+      - name: Publish the release commit
+        id: publish
+        if: steps.decide.outputs.publish != ''
+        env:
+          RELEASE_SHA: ${{ steps.decide.outputs.publish }}
+          VERSION: ${{ steps.decide.outputs.version }}
+          # changeset publish runs `pnpm publish`, which reads PNPM_CONFIG_* (not NPM_CONFIG_*).
+          # Provenance is required so a publish without it fails here instead of being silently
+          # rejected later by the Homebrew tap, which only takes a version built here.
+          PNPM_CONFIG_PROVENANCE: "true"
+        run: |
+          git checkout --quiet --detach "$RELEASE_SHA"
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+          # Publishes the versions npm lacks (this package's) and tags each v<version> at HEAD.
+          pnpm exec changeset publish
+          git rev-parse --quiet --verify "refs/tags/v$VERSION" > /dev/null
+          git push origin "v$VERSION"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the published release commit
+        if: steps.decide.outputs.tag != ''
+        env:
+          RELEASE_SHA: ${{ steps.decide.outputs.tag }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          git tag --annotate "v$VERSION" --message "v$VERSION" "$RELEASE_SHA"
+          git push origin "v$VERSION"
+
+      # Bumps package.json and writes CHANGELOG.md from the pending changesets, which it deletes.
+      # The pushed commit starts the run that publishes it.
+      - name: Version pending changesets
+        run: |
+          git checkout --quiet --detach "$GITHUB_SHA"
           git fetch --quiet origin main
           if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
             echo "main has moved past $GITHUB_SHA; the run for the newer commit versions it."
-            echo "mode=none" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Dependabot cannot write changesets. Every dependency here is bundled into dist/, so an
-          # npm update merged from Dependabot is released as a patch on its behalf.
-          if [ "$(git log -1 --format=%an)" = "dependabot[bot]" ] &&
-            ! git diff --quiet HEAD^ HEAD -- package.json pnpm-lock.yaml; then
-            SUBJECT=$(git log -1 --format=%s)
-            printf -- '---\n"create-dotfiles": patch\n---\n\n%s\n' "$SUBJECT" \
-              > ".changeset/dependabot-$(git rev-parse --short HEAD).md"
-            echo "Wrote a patch changeset for: $SUBJECT"
+          # Dependabot cannot write changesets. Every dependency is bundled into dist/, so each npm
+          # update Dependabot merged since the last release commit is released as a patch. The
+          # file name makes this idempotent, and the scan does not depend on which run gets here.
+          LAST=$(git log --format='%H %s' HEAD | awk 'substr($0, 42) ~ /^chore\(release\): v/ { print $1; exit }')
+          for COMMIT in $(git log --format=%h --author='^dependabot\[bot\]' "$LAST..HEAD" -- package.json pnpm-lock.yaml); do
+            printf -- '---\n"create-dotfiles": patch\n---\n\n%s\n' "$(git log -1 --format=%s "$COMMIT")" \
+              > ".changeset/dependabot-$COMMIT.md"
+            echo "Wrote a patch changeset for Dependabot's $COMMIT."
+          done
+          if [ -z "$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md -print -quit)" ]; then
+            echo "No pending changesets: nothing to version."
+            exit 0
           fi
-          if [ -n "$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md -print -quit)" ]; then
-            echo "Pending changesets: versioning."
-            echo "mode=version" >> "$GITHUB_OUTPUT"
-          else
-            echo "create-dotfiles@$VERSION is published and nothing is pending: nothing to release."
-            echo "mode=none" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Bumps package.json and writes CHANGELOG.md from the changesets, which it deletes. The
-      # pushed commit starts the run that publishes it.
-      - name: Version
-        if: steps.decide.outputs.mode == 'version'
-        run: |
+          pnpm install --frozen-lockfile
           pnpm exec changeset version
           pnpm format
           VERSION=$(node -p 'require("./package.json").version')
           git add --all
           git commit --message "chore(release): v$VERSION"
           git push origin HEAD:main
-
-      - name: Check
-        if: steps.decide.outputs.mode == 'publish'
-        run: |
-          pnpm lint
-          pnpm typecheck
-          pnpm test
-          pnpm build
-      # Publishes every version not yet on npm (this package's, here) and tags it v<version>.
-      - name: Publish
-        id: publish
-        if: steps.decide.outputs.mode == 'publish'
-        run: |
-          pnpm exec changeset publish
-          git push origin --tags
-          echo "published=true" >> "$GITHUB_OUTPUT"
 
   # Homebrew follows npm on its own: bump.yml in thilllon/homebrew-tap polls npm on a schedule
   # and commits each new version. GitHub disables a public repository's scheduled workflows after

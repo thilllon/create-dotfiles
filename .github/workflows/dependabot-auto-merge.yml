@@ -1,7 +1,9 @@
 name: Dependabot auto-merge
 
-# Merges Dependabot's grouped minor/patch PRs once CI has passed on them. Majors arrive as
-# separate PRs (see .github/dependabot.yml) and wait for a human.
+# Merges Dependabot's grouped npm minor/patch PR once CI has passed on it. Majors arrive as
+# separate PRs (see .github/dependabot.yml) and wait for a human, and so does the GitHub Actions
+# group: it edits .github/workflows/, which needs a Workflows permission that neither
+# RELEASE_TOKEN nor GITHUB_TOKEN has, and it would release nothing anyway.
 #
 # workflow_run, not pull_request: it runs after CI and has the repository's Actions secrets, which
 # a Dependabot pull_request run does not. The merge uses RELEASE_TOKEN because a merge made with
@@ -33,9 +35,9 @@ jobs:
       # commit CI passed on, never a newer push. The repository deletes merged branches itself.
       - run: |
           PR=$(gh api "repos/$GH_REPO/pulls?state=open&head=${GH_REPO%%/*}:$BRANCH" \
-            --jq '.[] | select(.title | test("the [a-z-]+-minor-patch group")) | .number')
+            --jq '.[] | select(.title | test("the npm-minor-patch group")) | .number')
           if [ -z "$PR" ]; then
-            echo "$BRANCH is not an open grouped minor/patch PR; left for review."
+            echo "$BRANCH is not the open npm minor/patch group PR; left for review."
             exit 0
           fi
           gh api --method PUT "repos/$GH_REPO/pulls/$PR/merge" \
