@@ -1,5 +1,11 @@
 # create-dotfiles
 
+## 2.4.8
+
+### Patch Changes
+
+- chore(deps-dev): bump the npm-minor-patch group across 1 directory with 4 updates (#45)
+
 ## 2.4.7
 
 ### Patch Changes
