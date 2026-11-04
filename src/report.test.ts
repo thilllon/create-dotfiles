@@ -1,19 +1,12 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { collect } from "./collect";
-import { parseConfig } from "./config";
-import {
-  formatBytes,
-  formatFoundTargets,
-  formatNeverCopied,
-  formatRestoreSummary,
-  formatSummary,
-  outputEncryptionNote,
-} from "./report";
-import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "./test-helpers";
+import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "../test/helpers";
+import { Collector } from "./collect";
+import { Config } from "./config";
+import { Reporter } from "./report";
 
-describe("formatBytes", () => {
+describe("Reporter.bytes", () => {
   it.each([
     [0, "0 B"],
     [1023, "1023 B"],
@@ -24,11 +17,11 @@ describe("formatBytes", () => {
     [2 * 1024 ** 4, "2.0 TB"],
     [5000 * 1024 ** 4, "5000.0 TB"],
   ])("formats %d bytes as %s", (bytes, text) => {
-    expect(formatBytes(bytes)).toBe(text);
+    expect(Reporter.bytes(bytes)).toBe(text);
   });
 });
 
-describe("formatSummary", () => {
+describe("Reporter.summary", () => {
   let home: string;
   let out: string;
 
@@ -46,7 +39,7 @@ describe("formatSummary", () => {
   });
 
   it("lists every file with size and group, the skipped, missing and failed entries and the outputs of a dry run", async () => {
-    const summary = await collect({
+    const summary = await Collector.collect({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -57,7 +50,7 @@ describe("formatSummary", () => {
       dryRun: true,
     });
 
-    const text = formatSummary(summary);
+    const text = Reporter.summary(summary);
 
     expect(text).toContain(`Would copy 2 files (8 B) from ${home}`);
     expect(text).toContain("  .zshrc (5 B) [core]");
@@ -75,7 +68,7 @@ describe("formatSummary", () => {
   });
 
   it("marks an encrypted zip and warns that the folder and tar.gz beside it are not", async () => {
-    const summary = await collect({
+    const summary = await Collector.collect({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -85,7 +78,7 @@ describe("formatSummary", () => {
       dryRun: true,
     });
 
-    const text = formatSummary(summary);
+    const text = Reporter.summary(summary);
 
     expect(text).toContain(
       `  zip:    ${join(out, `${FIXED_NAME}.zip`)} (AES-256, password-protected)\n`
@@ -94,7 +87,7 @@ describe("formatSummary", () => {
   });
 
   it("shows counts only for a real run unless the file list is requested", async () => {
-    const summary = await collect({
+    const summary = await Collector.collect({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -103,21 +96,21 @@ describe("formatSummary", () => {
       includeEnv: false,
     });
 
-    const brief = formatSummary(summary);
+    const brief = Reporter.summary(summary);
     expect(brief).toContain(`Copied 1 file (5 B) from ${home}`);
     expect(brief).not.toContain("[core]");
     expect(brief).toContain(`Written:\n  folder: ${join(out, FIXED_NAME)}/`);
     expect(brief).not.toContain("Dry run");
 
-    const full = formatSummary(summary, { listFiles: true });
+    const full = Reporter.summary(summary, { listFiles: true });
     expect(full).toContain("  .zshrc (5 B) [core]");
   });
 
   it("lists failed entries with their reason", async () => {
-    const config = parseConfig('[files]\ninclude = ["dotfiles-20260101-000000"]', home);
+    const config = Config.parse('[files]\ninclude = ["dotfiles-20260101-000000"]', home);
     createFile(home, "dotfiles-20260101-000000/x", "x");
 
-    const summary = await collect({
+    const summary = await Collector.collect({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -125,13 +118,13 @@ describe("formatSummary", () => {
       config,
     });
 
-    expect(formatSummary(summary)).toContain(
+    expect(Reporter.summary(summary)).toContain(
       "Failed (1):\n  dotfiles-20260101-000000: excluded: matches a never-copied rule"
     );
   });
 });
 
-describe("outputEncryptionNote", () => {
+describe("Reporter.encryptionNote", () => {
   const outputs = (...names: ("folder" | "zip" | "tar")[]) =>
     Object.fromEntries(names.map((name) => [name, `/out/x.${name}`]));
 
@@ -146,13 +139,13 @@ describe("outputEncryptionNote", () => {
       "Only the zip is encrypted: the folder and tar.gz are not.",
     ],
   ])("encryptZip=%s with %j -> %s", (encryptZip, planOutputs, note) => {
-    expect(outputEncryptionNote({ encryptZip, outputs: planOutputs })).toBe(note);
+    expect(Reporter.encryptionNote({ encryptZip, outputs: planOutputs })).toBe(note);
   });
 });
 
-describe("formatRestoreSummary", () => {
+describe("Reporter.restoreSummary", () => {
   it("prints [OK], [SKIP] and [FAIL] lines and the totals", () => {
-    const text = formatRestoreSummary({
+    const text = Reporter.restoreSummary({
       source: "/h/dotfiles-20260902-110342",
       homeDir: "/h",
       force: false,
@@ -171,9 +164,9 @@ describe("formatRestoreSummary", () => {
   });
 });
 
-describe("formatFoundTargets", () => {
+describe("Reporter.foundTargets", () => {
   it("groups targets by category in first-seen order", () => {
-    const text = formatFoundTargets([
+    const text = Reporter.foundTargets([
       { path: ".zshrc", group: "core", category: "Shell" },
       { path: ".gitconfig", group: "core", category: "Git" },
       { path: ".bashrc", group: "core", category: "Shell" },
@@ -184,13 +177,13 @@ describe("formatFoundTargets", () => {
   });
 
   it("says so when nothing was found", () => {
-    expect(formatFoundTargets([])).toMatch(/No dotfiles .* found/);
+    expect(Reporter.foundTargets([])).toMatch(/No dotfiles .* found/);
   });
 });
 
-describe("formatNeverCopied", () => {
+describe("Reporter.neverCopied", () => {
   it("names the excluded directories, caches, private keys and the size cap", () => {
-    const text = formatNeverCopied(10);
+    const text = Reporter.neverCopied(10);
 
     expect(text).toContain("node_modules");
     expect(text).toContain(".git");
@@ -205,6 +198,6 @@ describe("formatNeverCopied", () => {
     );
     expect(text).toContain("~/Videos, ~/Templates, ~/snap, ~/AppData");
     expect(text).toContain("~/OneDrive");
-    expect(formatNeverCopied(25)).toContain("larger than 25 MB");
+    expect(Reporter.neverCopied(25)).toContain("larger than 25 MB");
   });
 });

@@ -3,18 +3,6 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type DotfilesConfig, parseConfig } from "./config";
-import { DotfileError } from "./errors";
-import type { PlanOptions } from "./options";
-import {
-  CUSTOM_CATEGORY,
-  collectionName,
-  ENV_SCAN_TARGET,
-  filterPlan,
-  type Plan,
-  resolveTargets,
-} from "./plan";
-import { ENV_SCAN_SKIPPED_FOLDERS, resolveTargetPlatform } from "./targets";
 import {
   canSymlink,
   createFile,
@@ -24,19 +12,24 @@ import {
   makeTempDir,
   symlinkDir,
   TEST_PLATFORM,
-} from "./test-helpers";
+} from "../test/helpers";
+import { Config, type DotfilesConfig, type PlanOptions } from "./config";
+import { CUSTOM_CATEGORY, ENV_SCAN_SKIPPED_FOLDERS, ENV_SCAN_TARGET } from "./constants";
+import { DotfileError } from "./errors";
+import { type Plan, Planner } from "./plan";
+import { Targets } from "./targets";
 
-describe("collectionName", () => {
+describe("Planner.collectionName", () => {
   it("formats local time as dotfiles-YYYYMMDD-HHMMSS", () => {
-    expect(collectionName(FIXED_DATE)).toBe(FIXED_NAME);
+    expect(Planner.collectionName(FIXED_DATE)).toBe(FIXED_NAME);
   });
 
   it("zero-pads every component", () => {
-    expect(collectionName(new Date(2026, 0, 5, 3, 4, 5))).toBe("dotfiles-20260105-030405");
+    expect(Planner.collectionName(new Date(2026, 0, 5, 3, 4, 5))).toBe("dotfiles-20260105-030405");
   });
 });
 
-describe("resolveTargets", () => {
+describe("Planner.plan", () => {
   let home: string;
 
   beforeEach(() => {
@@ -48,9 +41,9 @@ describe("resolveTargets", () => {
   });
 
   const plan = (options: PlanOptions = {}): Plan =>
-    resolveTargets({ homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM, ...options });
+    Planner.plan({ homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM, ...options });
   const paths = (p: Plan) => p.files.map((f) => f.path);
-  const config = (toml: string): DotfilesConfig => parseConfig(toml, home);
+  const config = (toml: string): DotfilesConfig => Config.parse(toml, home);
 
   describe("core targets", () => {
     it("plans the targets that exist and reports the others as missing", () => {
@@ -85,9 +78,9 @@ describe("resolveTargets", () => {
       });
 
       it("defaults to the platform this process runs on", () => {
-        const host = resolveTargets({ homeDir: home, now: FIXED_DATE });
+        const host = Planner.plan({ homeDir: home, now: FIXED_DATE });
 
-        expect(host.platform).toBe(resolveTargetPlatform(process.platform));
+        expect(host.platform).toBe(Targets.resolvePlatform(process.platform));
         expect(paths(host)).toEqual(paths(plan({ platform: process.platform })));
       });
 
@@ -196,7 +189,7 @@ describe("resolveTargets", () => {
     });
 
     it("defaults to a folder in the home directory, secrets on, ~/.config off and a 10 MB cap", () => {
-      const p = resolveTargets({ homeDir: home, platform: TEST_PLATFORM });
+      const p = Planner.plan({ homeDir: home, platform: TEST_PLATFORM });
 
       expect(p.name).toMatch(/^dotfiles-\d{8}-\d{6}$/);
       expect(p.formats).toEqual(["folder"]);
@@ -757,7 +750,7 @@ describe("resolveTargets", () => {
   });
 });
 
-describe("filterPlan", () => {
+describe("Planner.filter", () => {
   let home: string;
 
   beforeEach(() => {
@@ -783,7 +776,7 @@ describe("filterPlan", () => {
   });
 
   it("gives the same result as scanning fresh with those options", () => {
-    const full = resolveTargets({
+    const full = Planner.plan({
       homeDir: home,
       now: FIXED_DATE,
       platform: TEST_PLATFORM,
@@ -800,21 +793,21 @@ describe("filterPlan", () => {
             encryptZip,
             formats: ["zip", "tar"] as const,
           };
-          const fresh = resolveTargets({
+          const fresh = Planner.plan({
             homeDir: home,
             now: FIXED_DATE,
             platform: TEST_PLATFORM,
             ...options,
           });
 
-          expect(filterPlan(full, { ...options, now: FIXED_DATE })).toEqual(fresh);
+          expect(Planner.filter(full, { ...options, now: FIXED_DATE })).toEqual(fresh);
         }
       }
     }
   });
 
   it("keeps the plan's zip encryption while a zip is still written, and drops it otherwise", () => {
-    const encrypted = resolveTargets({
+    const encrypted = Planner.plan({
       homeDir: home,
       now: FIXED_DATE,
       platform: TEST_PLATFORM,
@@ -822,29 +815,29 @@ describe("filterPlan", () => {
       encryptZip: true,
     });
 
-    expect(filterPlan(encrypted, { formats: ["zip", "tar"] }).encryptZip).toBe(true);
-    expect(filterPlan(encrypted, { formats: ["folder"] }).encryptZip).toBe(false);
-    expect(filterPlan(encrypted, { encryptZip: false }).encryptZip).toBe(false);
-    expect(() => filterPlan(encrypted, { formats: ["tar"], encryptZip: true })).toThrow(
+    expect(Planner.filter(encrypted, { formats: ["zip", "tar"] }).encryptZip).toBe(true);
+    expect(Planner.filter(encrypted, { formats: ["folder"] }).encryptZip).toBe(false);
+    expect(Planner.filter(encrypted, { encryptZip: false }).encryptZip).toBe(false);
+    expect(() => Planner.filter(encrypted, { formats: ["tar"], encryptZip: true })).toThrow(
       'Encrypting the zip needs "zip" among the output formats (got tar)'
     );
   });
 
   it("leaves encryption to encrypt_zip when a zip is added to a plan that had none", () => {
-    const config = parseConfig("[settings]\nencrypt_zip = true", home);
+    const config = Config.parse("[settings]\nencrypt_zip = true", home);
     const options = { homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM, config };
-    const folderOnly = resolveTargets({ ...options, formats: ["folder"] });
+    const folderOnly = Planner.plan({ ...options, formats: ["folder"] });
 
-    const zipped = filterPlan(folderOnly, { formats: ["zip"], now: FIXED_DATE });
+    const zipped = Planner.filter(folderOnly, { formats: ["zip"], now: FIXED_DATE });
 
     expect(zipped.encryptZip).toBe(true);
-    expect(zipped).toEqual(resolveTargets({ ...options, formats: ["zip"] }));
+    expect(zipped).toEqual(Planner.plan({ ...options, formats: ["zip"] }));
   });
 
   it("recomputes the name and outputs for the new timestamp and formats", () => {
-    const full = resolveTargets({ homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM });
+    const full = Planner.plan({ homeDir: home, now: FIXED_DATE, platform: TEST_PLATFORM });
 
-    const later = filterPlan(full, { formats: ["tar"], now: new Date(2027, 0, 1, 0, 0, 0) });
+    const later = Planner.filter(full, { formats: ["tar"], now: new Date(2027, 0, 1, 0, 0, 0) });
 
     expect(later.name).toBe("dotfiles-20270101-000000");
     expect(later.outputs).toEqual({ tar: join(home, "dotfiles-20270101-000000.tar.gz") });

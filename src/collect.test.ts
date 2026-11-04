@@ -10,6 +10,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
@@ -17,26 +18,26 @@ import { strFromU8, unzipSync } from "fflate";
 import { list as tarList } from "tar";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type CollectOptions,
-  type CollectProgress,
-  collect,
-  countByGroup,
-  writePlan,
-} from "./collect";
-import { parseConfig } from "./config";
-import { DotfileError } from "./errors";
-import { toPosixPath } from "./paths";
-import { resolveTargets } from "./plan";
-import { readAesZip } from "./test-aes-zip";
-import {
   canSymlink,
   createFile,
   FIXED_DATE,
   FIXED_NAME,
   IS_WINDOWS,
   makeTempDir,
+  readAesZip,
   TEST_PLATFORM,
-} from "./test-helpers";
+} from "../test/helpers";
+import { type CollectOptions, type CollectProgress, Collector, ZipPassword } from "./collect";
+import { Config } from "./config";
+import {
+  MAX_ZIP_PASSWORD_LENGTH,
+  MIN_ZIP_PASSWORD_LENGTH,
+  ZIP_PASSWORD_ENV,
+  ZIP_PASSWORD_FILE_ENV,
+} from "./constants";
+import { DotfileError } from "./errors";
+import { PathUtils } from "./files";
+import { Planner } from "./plan";
 
 async function tarEntries(file: string): Promise<{ path: string; type: string }[]> {
   const entries: { path: string; type: string }[] = [];
@@ -63,7 +64,7 @@ function zipEntries(file: string): string[] {
 function filesUnder(dir: string): string[] {
   return (readdirSync(dir, { recursive: true }) as string[])
     .filter((rel) => statSync(join(dir, rel)).isFile())
-    .map((rel) => toPosixPath(rel, sep))
+    .map((rel) => PathUtils.toPosix(rel, sep))
     .sort();
 }
 
@@ -82,8 +83,14 @@ describe("collect", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  const run = (options: CollectOptions = {}) =>
-    collect({ homeDir: home, outDir: out, now: FIXED_DATE, platform: TEST_PLATFORM, ...options });
+  const run = async (options: CollectOptions = {}) =>
+    Collector.collect({
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      ...options,
+    });
 
   it("copies files to <out>/dotfiles-<ts>/<home-relative path>", async () => {
     const summary = await run();
@@ -155,7 +162,7 @@ describe("collect", () => {
 
   it("writes / entry names in zip and tar for an include spelled with backslashes", async () => {
     createFile(home, "work/scripts/run.sh", "#!/bin/sh");
-    const config = parseConfig('[files]\ninclude = ["work\\\\scripts"]', home);
+    const config = Config.parse('[files]\ninclude = ["work\\\\scripts"]', home);
 
     const summary = await run({ config, formats: ["folder", "zip", "tar"] });
 
@@ -176,7 +183,7 @@ describe("collect", () => {
 
   it("zips an include spelled with .. under its clean name instead of failing", async () => {
     createFile(home, "notes/todo.md", "todo");
-    const config = parseConfig('[files]\ninclude = ["x/../notes/", "./notes/todo.md"]', home);
+    const config = Config.parse('[files]\ninclude = ["x/../notes/", "./notes/todo.md"]', home);
 
     const summary = await run({ config, formats: ["zip", "tar"] });
 
@@ -191,7 +198,7 @@ describe("collect", () => {
   it("keeps spaces and non-ASCII characters in paths through folder, zip and tar", async () => {
     const rel = "spaces dir/ünï cödé.txt";
     createFile(home, rel, "ü");
-    const config = parseConfig(`[files]\ninclude = ["${rel}"]`, home);
+    const config = Config.parse(`[files]\ninclude = ["${rel}"]`, home);
 
     const summary = await run({ config, formats: ["folder", "zip", "tar"] });
 
@@ -299,7 +306,7 @@ describe("collect", () => {
   });
 
   it("records a copy failure and carries on with the remaining files", async () => {
-    const plan = resolveTargets({
+    const plan = Planner.plan({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -307,7 +314,7 @@ describe("collect", () => {
     });
     rmSync(join(home, ".zshrc"));
 
-    const summary = await writePlan(plan);
+    const summary = await new Collector(plan).write();
 
     expect(summary.copied.map((f) => f.path)).toEqual([".config/nvim/lua/init.lua"]);
     expect(summary.failed).toHaveLength(1);
@@ -342,7 +349,7 @@ describe("collect", () => {
   });
 
   it("reports a staged file that vanished before zipping as a rejection, not a crash", async () => {
-    const plan = resolveTargets({
+    const plan = Planner.plan({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -350,10 +357,12 @@ describe("collect", () => {
       formats: ["zip"],
     });
     const onProgress = ({ done, total }: CollectProgress) => {
-      if (done === total) rmSync(join(plan.stagingDir, ".zshrc"));
+      if (done === total) {
+        rmSync(join(plan.stagingDir, ".zshrc"));
+      }
     };
 
-    await expect(writePlan(plan, { onProgress })).rejects.toThrow(/ENOENT.*\.zshrc/);
+    await expect(new Collector(plan, { onProgress }).write()).rejects.toThrow(/ENOENT.*\.zshrc/);
 
     expect(existsSync(join(out, `${FIXED_NAME}.zip`))).toBe(false);
     expect(existsSync(plan.stagingDir)).toBe(false);
@@ -368,7 +377,7 @@ describe("collect", () => {
       createFile(home, ".vimrc", randomBytes(3 * 1024 * 1024));
       for (let round = 0; round < 3; round++) {
         rmSync(out, { recursive: true, force: true });
-        const plan = resolveTargets({
+        const plan = Planner.plan({
           homeDir: home,
           outDir: out,
           now: FIXED_DATE,
@@ -377,10 +386,12 @@ describe("collect", () => {
         });
         const last = plan.files[plan.files.length - 1].path;
         const onProgress = ({ done, total, stagingDir }: CollectProgress) => {
-          if (done === total) chmodSync(join(stagingDir, last), 0);
+          if (done === total) {
+            chmodSync(join(stagingDir, last), 0);
+          }
         };
 
-        const failure = writePlan(plan, { onProgress });
+        const failure = new Collector(plan, { onProgress }).write();
         await expect(failure).rejects.toThrow(/EACCES/);
         await expect(failure).rejects.not.toThrow(/ERR_STREAM_DESTROYED/);
 
@@ -391,7 +402,7 @@ describe("collect", () => {
   );
 
   it("removes the partial zip even when the failure lands before the file has been opened", async () => {
-    const plan = resolveTargets({
+    const plan = Planner.plan({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -404,7 +415,7 @@ describe("collect", () => {
     plan.files[0] = { ...plan.files[0], path: `.config/../${plan.files[0].path}` };
     const zipPath = join(out, `${FIXED_NAME}.zip`);
 
-    await expect(writePlan(plan)).rejects.toThrow(/invalid relative path/);
+    await expect(new Collector(plan).write()).rejects.toThrow(/invalid relative path/);
 
     expect(existsSync(zipPath)).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -417,7 +428,7 @@ describe("collect", () => {
     const onUncaught = (err: unknown) => void stray.push(err);
     process.on("uncaughtException", onUncaught);
     try {
-      const plan = resolveTargets({
+      const plan = Planner.plan({
         homeDir: home,
         outDir: out,
         now: FIXED_DATE,
@@ -426,7 +437,7 @@ describe("collect", () => {
       });
       plan.outputs.zip = join(out, "missing-dir", "x.zip");
 
-      await expect(writePlan(plan)).rejects.toThrow(/ENOENT/);
+      await expect(new Collector(plan).write()).rejects.toThrow(/ENOENT/);
 
       expect(existsSync(plan.stagingDir)).toBe(false);
       // Before the fix yazl kept pumping entries after the write stream had failed, hit the
@@ -457,8 +468,16 @@ describe("collect with an encrypted zip", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  const run = (options: CollectOptions = {}) =>
-    collect({ homeDir: home, outDir: out, now: FIXED_DATE, platform: TEST_PLATFORM, ...options });
+  // async: Collector.collect plans synchronously, so a planning error would otherwise throw
+  // instead of rejecting.
+  const run = async (options: CollectOptions = {}) =>
+    Collector.collect({
+      homeDir: home,
+      outDir: out,
+      now: FIXED_DATE,
+      platform: TEST_PLATFORM,
+      ...options,
+    });
   const zipPath = () => join(out, `${FIXED_NAME}.zip`);
 
   it("writes WinZip AES-256 AE-2 entries that decrypt to the collected files", async () => {
@@ -537,7 +556,7 @@ describe("collect with an encrypted zip", () => {
   });
 
   it("takes encrypt_zip from the config file when a zip is written, and ignores it otherwise", async () => {
-    const config = parseConfig("[settings]\nencrypt_zip = true", home);
+    const config = Config.parse("[settings]\nencrypt_zip = true", home);
 
     const folderOnly = await run({ config, formats: ["folder"] });
     expect(folderOnly.encryptZip).toBe(false);
@@ -593,7 +612,7 @@ describe("collect with an encrypted zip", () => {
   });
 
   it("removes the partial encrypted zip when a staged file vanished before zipping", async () => {
-    const plan = resolveTargets({
+    const plan = Planner.plan({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -604,12 +623,14 @@ describe("collect with an encrypted zip", () => {
     let staged = "";
     const onProgress = ({ done, total, stagingDir }: CollectProgress) => {
       staged = stagingDir;
-      if (done === total) rmSync(join(stagingDir, ".zshrc"));
+      if (done === total) {
+        rmSync(join(stagingDir, ".zshrc"));
+      }
     };
 
-    await expect(writePlan(plan, { onProgress, zipPassword: PASSWORD })).rejects.toThrow(
-      /ENOENT.*\.zshrc/
-    );
+    await expect(
+      new Collector(plan, { onProgress, zipPassword: PASSWORD }).write()
+    ).rejects.toThrow(/ENOENT.*\.zshrc/);
 
     // .zshrc is the first entry, so the failure lands while the zip file's open is still
     // pending: the teardown must wait for 'close' before unlinking, or the open re-creates it.
@@ -623,7 +644,7 @@ describe("collect with an encrypted zip", () => {
     createFile(home, ".vimrc", randomBytes(3 * 1024 * 1024));
     for (let round = 0; round < 4; round++) {
       rmSync(out, { recursive: true, force: true });
-      const plan = resolveTargets({
+      const plan = Planner.plan({
         homeDir: home,
         outDir: out,
         now: FIXED_DATE,
@@ -633,10 +654,12 @@ describe("collect with an encrypted zip", () => {
       });
       const last = plan.files[plan.files.length - 1].path;
       const onProgress = ({ done, total, stagingDir }: CollectProgress) => {
-        if (done === total) rmSync(join(stagingDir, last));
+        if (done === total) {
+          rmSync(join(stagingDir, last));
+        }
       };
 
-      const failure = writePlan(plan, { onProgress, zipPassword: PASSWORD });
+      const failure = new Collector(plan, { onProgress, zipPassword: PASSWORD }).write();
       await expect(failure).rejects.toThrow(/ENOENT/);
       await expect(failure).rejects.not.toThrow(/ERR_STREAM_DESTROYED/);
 
@@ -663,7 +686,9 @@ describe("collect with an encrypted zip", () => {
     expect(relative(out, staged).startsWith("..")).toBe(true);
     expect(staged.startsWith(realpathSync(tmpdir())) || staged.startsWith(tmpdir())).toBe(true);
     expect(outDuringRun).toEqual([]);
-    if (!IS_WINDOWS) expect(privateMode).toBe(0o700);
+    if (!IS_WINDOWS) {
+      expect(privateMode).toBe(0o700);
+    }
     expect(existsSync(dirname(staged))).toBe(false);
     expect(readdirSync(out)).toEqual([`${FIXED_NAME}.zip`]);
   });
@@ -679,7 +704,7 @@ describe("collect with an encrypted zip", () => {
   });
 
   it("removes the partial encrypted zip when the output cannot be written", async () => {
-    const plan = resolveTargets({
+    const plan = Planner.plan({
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
@@ -689,20 +714,122 @@ describe("collect with an encrypted zip", () => {
     });
     plan.outputs.zip = join(out, "missing-dir", "x.zip");
 
-    await expect(writePlan(plan, { zipPassword: PASSWORD })).rejects.toThrow(/ENOENT/);
+    await expect(new Collector(plan, { zipPassword: PASSWORD }).write()).rejects.toThrow(/ENOENT/);
 
     expect(existsSync(plan.outputs.zip)).toBe(false);
     expect(existsSync(plan.stagingDir)).toBe(false);
   });
 });
 
-describe("countByGroup", () => {
-  it("counts every group, defaulting to zero", () => {
-    expect(countByGroup([{ group: "core" }, { group: "core" }, { group: "custom" }])).toEqual({
-      core: 2,
-      secrets: 0,
-      "config-all": 0,
-      custom: 1,
+describe("ZipPassword", () => {
+  describe("problem", () => {
+    it("accepts printable ASCII from 15 to 99 characters, spaces included", () => {
+      expect(ZipPassword.problem("a".repeat(MIN_ZIP_PASSWORD_LENGTH))).toBeUndefined();
+      expect(ZipPassword.problem("a".repeat(MAX_ZIP_PASSWORD_LENGTH))).toBeUndefined();
+      expect(ZipPassword.problem("correct horse battery staple")).toBeUndefined();
+      expect(ZipPassword.problem(" !\"#$%&'()*+,-./0123456789:;<=>?@[\\]^_`{|}~")).toBeUndefined();
+    });
+
+    it.each([
+      ["", "at least 15 characters (got 0)"],
+      ["a".repeat(14), "at least 15 characters (got 14)"],
+      ["a".repeat(100), "at most 99 characters, the most 7-Zip accepts (got 100)"],
+      ["pässwörd mit umlauten", "only printable ASCII"],
+      ["tab\tseparated password", "only printable ASCII"],
+      ["delete\x7fcharacter password", "only printable ASCII"],
+      ["line one\nline two password", "only printable ASCII"],
+    ])("rejects %j", (password, message) => {
+      expect(ZipPassword.problem(password)).toContain(message);
+      expect(() => ZipPassword.assert(password)).toThrow(DotfileError);
+    });
+  });
+
+  describe("generate", () => {
+    it("makes six groups of five Crockford base32 symbols that pass the policy", () => {
+      const password = ZipPassword.generate();
+
+      expect(password).toMatch(/^[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){5}$/);
+      expect(ZipPassword.problem(password)).toBeUndefined();
+    });
+
+    it("does not repeat itself", () => {
+      const passwords = new Set(Array.from({ length: 200 }, () => ZipPassword.generate()));
+
+      expect(passwords.size).toBe(200);
+    });
+  });
+
+  describe("fromEnv", () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = makeTempDir("dotfiles-zip-password-");
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("returns undefined when neither variable is set, or both are empty", () => {
+      expect(ZipPassword.fromEnv({})).toBeUndefined();
+      expect(
+        ZipPassword.fromEnv({ [ZIP_PASSWORD_ENV]: "", [ZIP_PASSWORD_FILE_ENV]: "" })
+      ).toBeUndefined();
+    });
+
+    it("reads the password variable as given", () => {
+      expect(ZipPassword.fromEnv({ [ZIP_PASSWORD_ENV]: " spaced password " })).toBe(
+        " spaced password "
+      );
+    });
+
+    it.each([
+      ["LF", "from a file password\nsecond line\n"],
+      ["CRLF", "from a file password\r\nsecond line"],
+      ["no newline", "from a file password"],
+      ["a UTF-8 BOM", "\uFEFFfrom a file password\r\n"],
+    ])("reads the first line of the password file (%s)", (_, content) => {
+      const file = join(dir, "password");
+      writeFileSync(file, content);
+
+      expect(ZipPassword.fromEnv({ [ZIP_PASSWORD_FILE_ENV]: file })).toBe("from a file password");
+    });
+
+    it("keeps leading and trailing spaces in the password file", () => {
+      const file = join(dir, "password");
+      writeFileSync(file, "  spaced out password  \n");
+
+      expect(ZipPassword.fromEnv({ [ZIP_PASSWORD_FILE_ENV]: file })).toBe(
+        "  spaced out password  "
+      );
+    });
+
+    it("refuses both variables at once", () => {
+      expect(() =>
+        ZipPassword.fromEnv({ [ZIP_PASSWORD_ENV]: "a", [ZIP_PASSWORD_FILE_ENV]: join(dir, "p") })
+      ).toThrow(`Set only one of ${ZIP_PASSWORD_ENV} and ${ZIP_PASSWORD_FILE_ENV}`);
+    });
+
+    it("reports a password file that cannot be read or starts with an empty line", () => {
+      const missing = join(dir, "missing");
+      expect(() => ZipPassword.fromEnv({ [ZIP_PASSWORD_FILE_ENV]: missing })).toThrow(
+        `Cannot read ${ZIP_PASSWORD_FILE_ENV} (${missing})`
+      );
+
+      const empty = join(dir, "empty");
+      writeFileSync(empty, "\nsecond line");
+      expect(() => ZipPassword.fromEnv({ [ZIP_PASSWORD_FILE_ENV]: empty })).toThrow(
+        "has no password on its first line"
+      );
+    });
+  });
+
+  describe("requireFromEnv", () => {
+    it("returns the password, or explains where one can come from", () => {
+      expect(ZipPassword.requireFromEnv({ [ZIP_PASSWORD_ENV]: "x" })).toBe("x");
+      expect(() => ZipPassword.requireFromEnv({})).toThrow(
+        `set ${ZIP_PASSWORD_ENV} or ${ZIP_PASSWORD_FILE_ENV}, or run interactively in a terminal`
+      );
     });
   });
 });

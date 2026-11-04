@@ -6,8 +6,7 @@ import { join } from "node:path";
 import { unzipSync } from "fflate";
 import { list as tarList } from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readAesZip } from "./test-aes-zip";
-import { createFile, makeTempDir } from "./test-helpers";
+import { createFile, makeTempDir, readAesZip } from "../test/helpers";
 
 // Vitest runs with the project root as cwd, so paths resolve from there. tsx is started as
 // a JS entry under the current node binary rather than through node_modules/.bin, which on
@@ -169,7 +168,9 @@ describe("cli", () => {
         "projects/app/.env",
       ];
 
-      for (const rel of expected) expect(existsSync(join(tempHome, name, rel))).toBe(true);
+      for (const rel of expected) {
+        expect(existsSync(join(tempHome, name, rel))).toBe(true);
+      }
       expect(existsSync(join(tempHome, name, ".ssh/id_ed25519"))).toBe(false);
       expect(existsSync(join(tempHome, name, "projects/app/node_modules/pkg/.env"))).toBe(false);
 
@@ -181,7 +182,9 @@ describe("cli", () => {
         file: join(tempHome, `${name}.tar.gz`),
         onReadEntry: (e) => tarNames.push(e.path),
       });
-      for (const rel of expected) expect(tarNames).toContain(`${name}/${rel}`);
+      for (const rel of expected) {
+        expect(tarNames).toContain(`${name}/${rel}`);
+      }
       expect(tarNames).not.toContain(`${name}/.ssh/id_ed25519`);
 
       expect(stdout).toContain("Copied 5 files");
@@ -417,7 +420,9 @@ describe("cli", () => {
 
         expect(status).toBe(1);
         expect(output).toContain("Error: --encrypt-zip takes no value");
-        if (value.length > 1) expect(output).not.toContain(value);
+        if (value.length > 1) {
+          expect(output).not.toContain(value);
+        }
         expect(readdirSync(tempHome).sort()).toEqual(before);
       });
 

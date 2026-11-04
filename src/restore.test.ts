@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createFile, makeTempDir } from "../test/helpers";
 import { DotfileError } from "./errors";
-import { findLatestCollection, restore } from "./restore";
-import { createFile, makeTempDir } from "./test-helpers";
+import { Restorer } from "./restore";
 
-describe("findLatestCollection", () => {
+describe("Restorer.findLatestCollection", () => {
   let home: string;
 
   beforeEach(() => {
@@ -28,17 +28,17 @@ describe("findLatestCollection", () => {
     utimesSync(join(home, "dotfiles-20260902-110342"), old, old);
     utimesSync(join(home, "dotfiles-20260301-120000"), new Date(), new Date());
 
-    expect(findLatestCollection(home)).toBe(join(home, "dotfiles-20260902-110342"));
+    expect(Restorer.findLatestCollection(home)).toBe(join(home, "dotfiles-20260902-110342"));
   });
 
   it("returns undefined when there is no collection", () => {
     mkdirSync(join(home, "something-else"));
 
-    expect(findLatestCollection(home)).toBeUndefined();
+    expect(Restorer.findLatestCollection(home)).toBeUndefined();
   });
 });
 
-describe("restore", () => {
+describe("Restorer.restore", () => {
   let home: string;
   const older = "dotfiles-20260101-000000";
   const newest = "dotfiles-20260902-110342";
@@ -55,7 +55,7 @@ describe("restore", () => {
   });
 
   it("restores the newest collection by default, preserving nested paths", () => {
-    const summary = restore({ homeDir: home });
+    const summary = Restorer.restore({ homeDir: home });
 
     expect(summary.source).toBe(join(home, newest));
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("new zshrc");
@@ -68,7 +68,7 @@ describe("restore", () => {
   it("leaves existing files alone by default and reports them as skipped", () => {
     createFile(home, ".zshrc", "mine");
 
-    const summary = restore({ homeDir: home });
+    const summary = Restorer.restore({ homeDir: home });
 
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("mine");
     expect(summary.skipped).toEqual([".zshrc"]);
@@ -79,7 +79,7 @@ describe("restore", () => {
   it("overwrites existing files with force", () => {
     createFile(home, ".zshrc", "mine");
 
-    const summary = restore({ homeDir: home, force: true });
+    const summary = Restorer.restore({ homeDir: home, force: true });
 
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("new zshrc");
     expect(summary.skipped).toEqual([]);
@@ -91,7 +91,7 @@ describe("restore", () => {
     createFile(home, ".config/nvim/lua/other.lua", "keep");
     createFile(home, ".config/nvim/plugin/x.lua", "keep too");
 
-    const summary = restore({ homeDir: home, force: true });
+    const summary = Restorer.restore({ homeDir: home, force: true });
 
     expect(readFileSync(join(home, ".config/nvim/lua/init.lua"), "utf8")).toBe("-- vim");
     expect(readFileSync(join(home, ".config/nvim/lua/other.lua"), "utf8")).toBe("keep");
@@ -102,29 +102,35 @@ describe("restore", () => {
   });
 
   it("restores from an explicit absolute source", () => {
-    const summary = restore({ homeDir: home, source: join(home, older) });
+    const summary = Restorer.restore({ homeDir: home, source: join(home, older) });
 
     expect(summary.source).toBe(join(home, older));
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("old zshrc");
   });
 
   it("resolves a bare collection name against the home directory", () => {
-    const summary = restore({ homeDir: home, source: older });
+    const summary = Restorer.restore({ homeDir: home, source: older });
 
     expect(summary.source).toBe(join(home, older));
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("old zshrc");
   });
 
   it("expands ~/ and ~\\ in the source", () => {
-    expect(restore({ homeDir: home, source: `~/${older}` }).source).toBe(join(home, older));
-    expect(restore({ homeDir: home, source: `~\\${older}` }).source).toBe(join(home, older));
+    expect(Restorer.restore({ homeDir: home, source: `~/${older}` }).source).toBe(
+      join(home, older)
+    );
+    expect(Restorer.restore({ homeDir: home, source: `~\\${older}` }).source).toBe(
+      join(home, older)
+    );
   });
 
   it("throws a DotfileError when no collection exists", () => {
     const empty = makeTempDir();
     try {
-      expect(() => restore({ homeDir: empty })).toThrow(DotfileError);
-      expect(() => restore({ homeDir: empty })).toThrow(/No dotfiles-YYYYMMDD-HHMMSS folder found/);
+      expect(() => Restorer.restore({ homeDir: empty })).toThrow(DotfileError);
+      expect(() => Restorer.restore({ homeDir: empty })).toThrow(
+        /No dotfiles-YYYYMMDD-HHMMSS folder found/
+      );
     } finally {
       rmSync(empty, { recursive: true, force: true });
     }
@@ -135,12 +141,12 @@ describe("restore", () => {
     (suffix) => {
       createFile(home, `${newest}${suffix}`, "archive bytes");
 
-      expect(() => restore({ homeDir: home, source: join(home, `${newest}${suffix}`) })).toThrow(
-        DotfileError
-      );
-      expect(() => restore({ homeDir: home, source: join(home, `${newest}${suffix}`) })).toThrow(
-        `Restoring from an archive is not supported: ${join(home, `${newest}${suffix}`)}`
-      );
+      expect(() =>
+        Restorer.restore({ homeDir: home, source: join(home, `${newest}${suffix}`) })
+      ).toThrow(DotfileError);
+      expect(() =>
+        Restorer.restore({ homeDir: home, source: join(home, `${newest}${suffix}`) })
+      ).toThrow(`Restoring from an archive is not supported: ${join(home, `${newest}${suffix}`)}`);
       expect(existsSync(join(home, ".zshrc"))).toBe(false);
     }
   );
@@ -148,10 +154,10 @@ describe("restore", () => {
   it("rejects a missing source and a source that is a plain file", () => {
     createFile(home, "notes.txt", "x");
 
-    expect(() => restore({ homeDir: home, source: join(home, "nope") })).toThrow(
+    expect(() => Restorer.restore({ homeDir: home, source: join(home, "nope") })).toThrow(
       /Restore source not found/
     );
-    expect(() => restore({ homeDir: home, source: join(home, "notes.txt") })).toThrow(
+    expect(() => Restorer.restore({ homeDir: home, source: join(home, "notes.txt") })).toThrow(
       /must be a directory/
     );
   });
@@ -160,8 +166,8 @@ describe("restore", () => {
     ["its absolute path", (h: string) => h],
     ["~", () => "~"],
   ])("refuses the home directory itself as the source, given as %s", (_label, source) => {
-    expect(() => restore({ homeDir: home, source: source(home) })).toThrow(DotfileError);
-    expect(() => restore({ homeDir: home, source: source(home) })).toThrow(
+    expect(() => Restorer.restore({ homeDir: home, source: source(home) })).toThrow(DotfileError);
+    expect(() => Restorer.restore({ homeDir: home, source: source(home) })).toThrow(
       "Restore source must be a collection folder, not the home directory"
     );
     expect(existsSync(join(home, ".zshrc"))).toBe(false);
@@ -170,7 +176,7 @@ describe("restore", () => {
   it("records a failure when a destination cannot be written and continues", () => {
     mkdirSync(join(home, ".zshrc"));
 
-    const summary = restore({ homeDir: home, force: true });
+    const summary = Restorer.restore({ homeDir: home, force: true });
 
     // EISDIR on Linux; macOS and Windows may report EPERM, EACCES or EEXIST for the same copy.
     expect(summary.failed).toEqual([

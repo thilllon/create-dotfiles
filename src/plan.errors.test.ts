@@ -1,9 +1,9 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveTargets, scanEnvFiles } from "./plan";
-import { createFile, FIXED_DATE, makeTempDir, TEST_PLATFORM } from "./test-helpers";
-import type { WalkedFile } from "./walk";
+import { createFile, FIXED_DATE, makeTempDir, TEST_PLATFORM } from "../test/helpers";
+import type { WalkedFile } from "./files";
+import { Planner } from "./plan";
 
 /**
  * Windows homes hold entries the process may not read: `NTUSER.DAT` and locked files fail
@@ -20,27 +20,39 @@ vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   const failing = (path: unknown, syscall: string): NodeJS.ErrnoException | undefined => {
     const text = String(path).split("\\").join("/");
-    if (syscall === "scandir" && text.endsWith("/locked")) return errno("EPERM", syscall, text);
-    if (syscall === "stat" && text.endsWith("/busy/.env")) return errno("EBUSY", syscall, text);
-    if (syscall === "realpath" && text.endsWith("/reparse")) return errno("EPERM", syscall, text);
+    if (syscall === "scandir" && text.endsWith("/locked")) {
+      return errno("EPERM", syscall, text);
+    }
+    if (syscall === "stat" && text.endsWith("/busy/.env")) {
+      return errno("EBUSY", syscall, text);
+    }
+    if (syscall === "realpath" && text.endsWith("/reparse")) {
+      return errno("EPERM", syscall, text);
+    }
     return undefined;
   };
   return {
     ...actual,
     readdirSync: (path: unknown, options?: unknown) => {
       const err = failing(path, "scandir");
-      if (err) throw err;
+      if (err) {
+        throw err;
+      }
       return (actual.readdirSync as (p: unknown, o?: unknown) => unknown)(path, options);
     },
     statSync: (path: unknown, options?: unknown) => {
       const err = failing(path, "stat");
-      if (err) throw err;
+      if (err) {
+        throw err;
+      }
       return (actual.statSync as (p: unknown, o?: unknown) => unknown)(path, options);
     },
     realpathSync: Object.assign(
       (path: unknown, options?: unknown) => {
         const err = failing(path, "realpath");
-        if (err) throw err;
+        if (err) {
+          throw err;
+        }
         return (actual.realpathSync as (p: unknown, o?: unknown) => unknown)(path, options);
       },
       { native: actual.realpathSync.native }
@@ -65,12 +77,12 @@ describe("filesystem errors during the scan and the walk", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("scanEnvFiles skips an unreadable directory and an unstat-able file, reports both and carries on", () => {
+  it("Planner.scanEnvFiles skips an unreadable directory and an unstat-able file, reports both and carries on", () => {
     const found: WalkedFile[] = [];
     const errors: [string, string][] = [];
 
     expect(() =>
-      scanEnvFiles(
+      Planner.scanEnvFiles(
         home,
         () => false,
         (file) => found.push(file),
@@ -85,8 +97,8 @@ describe("filesystem errors during the scan and the walk", () => {
     ]);
   });
 
-  it("resolveTargets completes with the failures in the plan, not an exception", () => {
-    const plan = resolveTargets({
+  it("Planner.plan completes with the failures in the plan, not an exception", () => {
+    const plan = Planner.plan({
       homeDir: home,
       now: FIXED_DATE,
       platform: TEST_PLATFORM,
@@ -107,7 +119,7 @@ describe("filesystem errors during the scan and the walk", () => {
   it("reports an unreadable home directory once instead of throwing", () => {
     const errors: string[] = [];
 
-    scanEnvFiles(
+    Planner.scanEnvFiles(
       join(home, "locked"),
       () => false,
       () => {
@@ -123,7 +135,7 @@ describe("filesystem errors during the scan and the walk", () => {
     createFile(home, ".config/reparse/x.toml", "x");
     createFile(home, ".config/tool/y.toml", "y");
 
-    const plan = resolveTargets({
+    const plan = Planner.plan({
       homeDir: home,
       now: FIXED_DATE,
       platform: TEST_PLATFORM,

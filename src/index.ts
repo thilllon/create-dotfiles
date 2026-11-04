@@ -2,99 +2,52 @@ export {
   type CollectOptions,
   type CollectProgress,
   type CollectSummary,
-  collect,
-  countByGroup,
+  Collector,
   type GroupCounts,
   type WriteOptions,
-  writePlan,
+  ZipPassword,
+  type ZipPasswordSource,
 } from "./collect";
 export {
-  CONFIG_FILE,
+  Config,
   type DotfilesConfig,
   type DotfilesSettings,
-  loadConfig,
-  parseConfig,
+  Options,
+  type OutputFormat,
+  type PlanOptions,
+  type ResolvedOptions,
 } from "./config";
+export * from "./constants";
 export { DotfileError } from "./errors";
-export { OUTPUT_FORMATS, type OutputFormat, parseFormats } from "./formats";
 export {
-  CANCEL,
+  type FoundTarget,
+  type FailedEntry,
+  type MissingTarget,
+  type Plan,
+  type PlannedFile,
+  Planner,
+  type PlanOutputs,
+  type PlanOverrides,
+} from "./plan";
+export {
   type Cancelled,
   type ConfirmPrompt,
+  InteractiveSession,
   type InteractiveOptions,
   type InteractiveResult,
   type MultiselectPrompt,
   type PasswordPrompt,
   type Prompter,
-  runInteractive,
   type SelectOption,
   type SpinnerHandle,
 } from "./interactive";
+export { Reporter } from "./report";
+export { Restorer, type RestoreFailure, type RestoreOptions, type RestoreSummary } from "./restore";
 export {
-  DEFAULT_FORMATS,
-  DEFAULT_MAX_FILE_SIZE_MB,
-  type PlanOptions,
-  type ResolvedOptions,
-  resolveOptions,
-} from "./options";
-export {
-  collectionName,
-  ENV_SCAN_TARGET,
-  type FailedEntry,
-  type FoundTarget,
-  filterPlan,
-  type MissingTarget,
-  type Plan,
-  type PlannedFile,
-  type PlanOutputs,
-  type PlanOverrides,
-  resolveTargets,
-  scanEnvFiles,
-} from "./plan";
-export {
-  formatBytes,
-  formatFoundTargets,
-  formatNeverCopied,
-  formatRestoreSummary,
-  formatSummary,
-  outputEncryptionNote,
-} from "./report";
-export {
-  findLatestCollection,
-  type RestoreFailure,
-  type RestoreOptions,
-  type RestoreSummary,
-  restore,
-} from "./restore";
-export {
-  COLLECTION_NAME_PATTERN,
-  COMMON_TARGET_CATEGORIES,
-  COMMON_TARGETS,
-  DEFAULT_TARGETS,
-  ENV_SCAN_MAX_DEPTH,
-  ENV_SCAN_SKIPPED_FOLDERS,
-  HARD_EXCLUDED_DIR_NAMES,
-  isEnvFile,
-  isExcluded,
-  isHardExcluded,
-  PLATFORM_TARGET_CATEGORIES,
-  PLATFORM_TARGETS,
-  resolveTargetPlatform,
+  ExcludeRules,
   type TargetCategory,
   type TargetGroup,
   type TargetPlatform,
+  Targets,
   type TargetSpec,
-  targetsFor,
 } from "./targets";
-export {
-  assertZipPassword,
-  generateZipPassword,
-  MAX_ZIP_PASSWORD_LENGTH,
-  MIN_ZIP_PASSWORD_LENGTH,
-  requireZipPasswordFromEnv,
-  ZIP_PASSWORD_ENV,
-  ZIP_PASSWORD_FILE_ENV,
-  type ZipPasswordSource,
-  zipPasswordFromEnv,
-  zipPasswordProblem,
-} from "./zip-password";

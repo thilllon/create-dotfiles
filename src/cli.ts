@@ -1,21 +1,21 @@
 import { resolve } from "node:path";
 import cac from "cac";
 import packageJson from "../package.json";
-import { createClackPrompter } from "./clack-prompter";
+import { ClackPrompter } from "./clack-prompter";
 import {
   type CollectOptions,
-  collect,
+  Collector,
   DEFAULT_MAX_FILE_SIZE_MB,
   DotfileError,
-  formatNeverCopied,
-  formatRestoreSummary,
-  formatSummary,
-  parseFormats,
-  requireZipPasswordFromEnv,
-  restore,
-  runInteractive,
+  InteractiveSession,
+  MAX_ZIP_PASSWORD_LENGTH,
+  MIN_ZIP_PASSWORD_LENGTH,
+  Options,
+  Reporter,
+  Restorer,
   ZIP_PASSWORD_ENV,
   ZIP_PASSWORD_FILE_ENV,
+  ZipPassword,
 } from "./index";
 
 const cli = cac("create-dotfiles");
@@ -64,7 +64,9 @@ function formatFlag(value: NonNullable<CollectFlags["format"]>): string | string
  * may be the password.
  */
 function encryptZipFlag(value: CollectFlags["encryptZip"]): boolean | undefined {
-  if (value === undefined || typeof value === "boolean") return value;
+  if (value === undefined || typeof value === "boolean") {
+    return value;
+  }
   throw new DotfileError(
     `--encrypt-zip takes no value; the password comes from the prompt, $${ZIP_PASSWORD_ENV} or $${ZIP_PASSWORD_FILE_ENV}`
   );
@@ -76,7 +78,8 @@ function toOptions(flags: CollectFlags): CollectOptions {
     includeEnv: flags.includeEnv,
     includeConfig: flags.includeConfig,
     encryptZip: encryptZipFlag(flags.encryptZip),
-    formats: flags.format === undefined ? undefined : parseFormats(formatFlag(flags.format)),
+    formats:
+      flags.format === undefined ? undefined : Options.parseFormats(formatFlag(flags.format)),
     outDir: flags.out === undefined ? undefined : resolve(flags.out),
     maxFileSizeMb: flags.maxFileSize === undefined ? undefined : Number(flags.maxFileSize),
     dryRun: flags.dryRun,
@@ -115,14 +118,17 @@ cli
           console.log("Not running in an interactive terminal; using --auto defaults.");
         }
         // Asked for only if the zip really is encrypted (the flag or encrypt_zip in the config).
-        const summary = await collect({ ...options, zipPassword: requireZipPasswordFromEnv });
-        console.log(formatSummary(summary, { listFiles: true }));
+        const summary = await Collector.collect({
+          ...options,
+          zipPassword: () => ZipPassword.requireFromEnv(),
+        });
+        console.log(Reporter.summary(summary, { listFiles: true }));
         return;
       }
 
       // A cancelled run has already printed "Cancelled." and exits 0 without writing.
       // A terminal run always asks for the zip password, even with the variables set.
-      await runInteractive(createClackPrompter(), options);
+      await new InteractiveSession(new ClackPrompter(), options).run();
     })
   );
 
@@ -131,8 +137,8 @@ cli
   .option("--force", "Overwrite files that already exist in the home directory")
   .action(
     run((source: string | undefined, flags: { force?: boolean }) => {
-      const summary = restore({ source, force: flags.force ?? false });
-      console.log(formatRestoreSummary(summary));
+      const summary = Restorer.restore({ source, force: flags.force ?? false });
+      console.log(Reporter.restoreSummary(summary));
     })
   );
 
@@ -140,7 +146,7 @@ cli.help((sections) => {
   const indent = (text: string) => text.replace(/^/gm, "  ");
   sections.push({
     title: "Never copied (regardless of options)",
-    body: indent(formatNeverCopied(DEFAULT_MAX_FILE_SIZE_MB)),
+    body: indent(Reporter.neverCopied(DEFAULT_MAX_FILE_SIZE_MB)),
   });
   sections.push({
     title: "Config file (optional, never created)",
@@ -156,7 +162,7 @@ cli.help((sections) => {
     title: "Encrypted zip (--encrypt-zip)",
     body: indent(
       [
-        "WinZip AES-256 (AE-2). Passwords need 15-99 printable ASCII characters; leave the prompt empty to generate one.",
+        `WinZip AES-256 (AE-2). Passwords need ${MIN_ZIP_PASSWORD_LENGTH}-${MAX_ZIP_PASSWORD_LENGTH} printable ASCII characters; leave the prompt empty to generate one.`,
         "File names, sizes and dates stay visible, as in any zip. A folder or tar.gz written alongside is not encrypted.",
         "Open with bsdtar -xf <zip> (built into macOS; libarchive-tools on Linux), which asks for the password, or 7-Zip, Keka, The Unarchiver. unzip, ditto and GNU tar cannot.",
       ].join("\n")
@@ -186,7 +192,9 @@ if (cli.matchedCommand?.name === "" && command !== undefined) {
   } catch (err) {
     // cac rejects unknown flags and missing option values before the action runs. Those are
     // user errors like any DotfileError: a message and exit 1, not a stack trace.
-    if ((err as Error).name !== "CACError") throw err;
+    if ((err as Error).name !== "CACError") {
+      throw err;
+    }
     console.error(`Error: ${(err as Error).message}`);
     process.exitCode = 1;
   }

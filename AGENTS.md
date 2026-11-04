@@ -20,7 +20,7 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
 - **Language**: TypeScript 7 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
 - **Bundler**: tsdown 0.23 (config: `tsdown.config.mts`, two entries); everything is bundled, so the published package has no runtime dependencies
 - **CLI parsing**: cac 7. **Prompts**: `@clack/prompts` (ESM-only; bundled). **Archives**: `tar`, `yazl`, and `@zip.js/zip.js` for AES-256 zips only (pinned exactly; imported lazily from `lib/zip-core-custom.js`, so it is a separate chunk in `dist/` that plain runs never load)
-- **Linter**: oxlint 1 (`.oxlintrc.json`: `correctness` as errors; `pnpm lint` passes `--deny-warnings`)
+- **Linter**: oxlint 1 (`.oxlintrc.json`: `correctness` as errors, plus `curly: all`, so an `if` body always gets braces and its own line; `pnpm lint` passes `--deny-warnings`)
 - **Formatter**: oxfmt 0.74 (`.oxfmtrc.json`: double quotes, semicolons, 2-space indent, 100 line
   width, ES5 trailing commas, sorted imports without blank lines between groups, sorted `package.json`).
   Both configs point `$schema` at `node_modules`, so the schema always matches the installed version
@@ -37,23 +37,22 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
 src/
   cli.ts               # cac wiring only; a thin layer over the library
   index.ts             # public API; package.json main/types/exports point at its build
-  collect.ts           # collect(): stage files, write folder/zip/tar, build the summary
-  plan.ts              # resolveTargets(), filterPlan(), scanEnvFiles(), collectionName()
-  targets.ts           # default targets (common + darwin/linux/win32), hard-exclude and private-key rules
-  paths.ts             # POSIX <-> native path helpers; archive entry names
-  walk.ts              # filesystem walking: follows symlinks at every level, detects loops
-  interactive.ts       # runInteractive(prompter): the prompt flow behind a Prompter interface
-  clack-prompter.ts    # Prompter implemented on @clack/prompts
-  options.ts           # PlanOptions -> ResolvedOptions (flags > config file > defaults)
-  config.ts            # ~/.dotfilesrc.toml loading and validation (the file is never created)
-  formats.ts           # folder | zip | tar parsing
-  report.ts            # summary, "found on this machine" and "never copied" formatting
-  restore.ts           # restore(), findLatestCollection()
+  constants.ts         # every constant: target tables, never-copied rules, .env scan, formats, zip password policy
+  config.ts            # Config (~/.dotfilesrc.toml, never created) and Options (flags > config > defaults, format parsing)
+  targets.ts           # Targets (per-platform defaults, hard-exclude and private-key rules) and ExcludeRules
+  files.ts             # PathUtils (POSIX <-> native, archive entry names) and FileWalker (follows symlinks, detects loops)
+  plan.ts              # Planner: plan(), filter(), scanEnvFiles(), collectionName()
+  collect.ts           # Collector (stage files, write folder/zip/tar, summary) and ZipPassword (policy, generator, env readers)
+  restore.ts           # Restorer: restore(), findLatestCollection()
+  report.ts            # Reporter: summary, "found on this machine" and "never copied" text
+  interactive.ts       # InteractiveSession: the prompt flow behind a Prompter interface
+  clack-prompter.ts    # ClackPrompter: Prompter implemented on @clack/prompts
   errors.ts            # DotfileError
-  zip-password.ts      # zip password policy, generator, and the CREATE_DOTFILES_ZIP_PASSWORD(_FILE) readers
-  test-helpers.ts      # shared fixtures for tests
-  test-aes-zip.ts      # test-only WinZip AES reader on node:crypto, independent of zip.js
   *.test.ts            # colocated tests; cli.test.ts spawns the CLI with HOME/USERPROFILE in a temp dir
+test/
+  helpers.ts           # test-only: temp homes and fixtures, platform probes, WinZip AES reader on node:crypto
+docs/
+  architecture.d2      # architecture diagram (source); architecture.svg is rendered from it with `d2`
 dist/                  # cli.cjs (bin), index.cjs, index.d.cts, and zip-core-custom-*.cjs chunks (zip.js, loaded only to encrypt)
 .github/
   workflows/
@@ -88,6 +87,11 @@ Releases happen only in CI (see below): never run `changeset version` or `change
 - 2-space indentation, 100 character line width
 - No external runtime dependencies beyond what's bundled by tsdown
 - Expected failures throw `DotfileError`; the CLI prints the message and exits 1, never a stack trace
+- Modules are organised as classes (`Planner`, `Collector`, `Restorer`, ...); add behaviour to the class it
+  belongs to rather than a new module of free functions
+- Every constant lives in `src/constants.ts`; modules import from there and never declare their own
+- No braceless `if`: `if (x) return y;` is a lint error (`curly: all`); the body goes on its own line
+- Test-only code lives in `test/helpers.ts`; tests themselves stay colocated as `src/*.test.ts`
 
 ## Git Conventions
 
@@ -161,10 +165,10 @@ Releases happen only in CI (see below): never run `changeset version` or `change
 
 ## Architecture Notes
 
-- **Plan, then write.** `resolveTargets()` produces a `Plan` (files with group and size, missing
-  targets, too-large files, output paths) without touching the disk; `writePlan()` executes it.
+- **Plan, then write.** `Planner.plan()` produces a `Plan` (files with group and size, missing
+  targets, too-large files, output paths) without touching the disk; `new Collector(plan).write()` executes it.
   `--dry-run` is the plan alone. The interactive flow scans once with every group enabled and
-  narrows with `filterPlan()` per answer; tests assert this equals a fresh plan for all opt-in
+  narrows with `Planner.filter()` per answer; tests assert this equals a fresh plan for all opt-in
   combinations.
 - **Groups**: `core` (built-in targets), `custom` (config `include`), `secrets`, `config-all`. A
   `.env` file belongs to `secrets` wherever it sits, even inside a core target or `~/.config`, so
@@ -173,7 +177,7 @@ Releases happen only in CI (see below): never run `changeset version` or `change
   (`node_modules`, `.git`, caches, …), `Library/Caches`, `Library/Application Support/*/Cache*`,
   private keys (`.ssh/*` except `config` and `*.pub`; `.gnupg/private-keys-v1.d`, `*.gpg`, `*.kbx`),
   previous collections (`dotfiles-YYYYMMDD-HHMMSS` with or without `.zip`/`.tar.gz`), and files over
-  the size cap. Rules live in `targets.ts`.
+  the size cap. The lists live in `constants.ts`, the rules in `targets.ts`.
 - **`.env` scan** is bounded: depth 4 from the home directory, never entering hard-excluded
   directories, never following symlinked directories (or Windows junctions and other reparse
   points), and skipping the top-level user folders (`ENV_SCAN_SKIPPED_FOLDERS`: the macOS ones —
@@ -183,7 +187,7 @@ Releases happen only in CI (see below): never run `changeset version` or `change
   3D Objects for Windows; one flat list on every OS). Core targets under `~/Library` or `AppData`
   and `--include-config` are unaffected by that skip. EPERM/EBUSY on `readdir`/`stat` are reported
   as failures and skipped; the scan never throws (`plan.errors.test.ts` simulates them).
-- **Symlinks are followed at every level** when copying (`walk.ts`), with loop detection, so a
+- **Symlinks are followed at every level** when copying (`FileWalker` in `files.ts`), with loop detection, so a
   stow-style setup is captured as real files and the archive is self-contained.
 - **Outputs**: files are staged into the timestamped folder; zip and tar.gz are written from the
   staged copies; when `folder` is not among the requested formats the staging folder is removed
@@ -199,8 +203,8 @@ Releases happen only in CI (see below): never run `changeset version` or `change
   - Format: WinZip AES-256, AE-2 (method 99, extra field 0x9901, CRC stored as 0), written by zip.js;
     unencrypted zips stay on yazl. Entries are added one at a time from `createReadStream` with an
     explicit size: concurrent adds buffer in memory, and `fs.openAsBlob` misreports sizes over 4 GiB.
-  - The password is settled in `writePlan` before anything is written. It is validated by
-    `zipPasswordProblem`: 15-99 printable ASCII characters. 15 is the NIST single-factor floor;
+  - The password is settled in `Collector.write()` before anything is written. It is validated by
+    `ZipPassword.problem`: 15-99 printable ASCII characters. 15 is the NIST single-factor floor;
     ASCII-only and 99 are 7-Zip's limits.
   - A string `zipPassword` for a plan that does not encrypt is an error, never a silently
     unprotected zip. A function source is called only when the zip is really encrypted, which is
@@ -256,17 +260,17 @@ exclude = [".config/kitty", "Snapshots"] # paths or directory names to exclude
 
 ## Platforms
 
-- **Default targets are per platform.** `targetsFor(platform)` = common categories + one of
+- **Default targets are per platform.** `Targets.forPlatform(platform)` = common categories + one of
   `PLATFORM_TARGET_CATEGORIES` (`darwin`, `linux`, `win32`; anything else counts as `linux`) +
   secrets. `PlanOptions.platform` (default `process.platform`) selects the set and is recorded on
-  the `Plan`, so a test on Linux can exercise all three lists. `DEFAULT_TARGETS` is this OS's list.
-  Add new targets to the right table in `targets.ts`, with `/` separators, relative to home
+  the `Plan`, so a test on Linux can exercise all three lists. `Targets.forPlatform()` is this OS's list.
+  Add new targets to the right table in `constants.ts`, with `/` separators, relative to home
   (`%USERPROFILE%` on Windows).
 - **Home-relative paths are POSIX everywhere inside the package**: target lists, `PlannedFile.path`,
   summaries, restore listings and archive entry names all use `/`. Conversion to native happens
   only at the filesystem boundary via `path.join(homeDir, posixPath)` (accepts `/` on Windows);
   anything coming back native (`path.relative`, recursive `readdir`) goes through
-  `toPosixPath()` from `paths.ts`. Zip entries are built with `archiveEntryName()` — yazl throws on
+  `PathUtils.toPosix()` from `files.ts`. Zip entries are built with `PathUtils.archiveEntryName()` — yazl throws on
   a backslash — and tar writes `/` names itself, so both mirror the staged folder. Config
   `include`/`exclude` entries are normalised `\` → `/` before validation (errors still quote the
   user's spelling); `expandHome` accepts `~/` and `~\`; exclusion matching splits on either
@@ -294,7 +298,7 @@ exclude = [".config/kitty", "Snapshots"] # paths or directory names to exclude
 - The interactive flow is tested through a fake `Prompter`; `clack-prompter.ts` is tested with
   `@clack/prompts` mocked. No test drives a real TTY
 - Zip contents are verified by reading the central directory with `fflate`; tar contents with
-  `tar.list`. Encrypted zips are decrypted by `test-aes-zip.ts`, written from the WinZip AE-x spec
+  `tar.list`. Encrypted zips are decrypted by `readAesZip` in `test/helpers.ts`, written from the WinZip AE-x spec
   on node:crypto (PBKDF2, verifier, HMAC-SHA1-80, little-endian AES-CTR). It never trusts zip.js to
   check its own output. It also asserts AES-256, AE-2 and a zero CRC, so a zip.js update cannot
   silently weaken the format. Dependabot's minor/patch auto-merge bumps zip.js too; this test is
