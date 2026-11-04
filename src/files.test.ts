@@ -59,3 +59,19 @@ describe("PathUtils.isSamePath", () => {
     expect(PathUtils.isSamePath("/x", "/x")).toBe(true);
   });
 });
+
+describe("PathUtils.trimTrailingSlashes", () => {
+  it("drops trailing slashes down to the minimum length", () => {
+    expect(PathUtils.trimTrailingSlashes("a/b//")).toBe("a/b");
+    expect(PathUtils.trimTrailingSlashes("///")).toBe("");
+    expect(PathUtils.trimTrailingSlashes("/", 1)).toBe("/");
+    expect(PathUtils.trimTrailingSlashes("a/", 1)).toBe("a");
+  });
+
+  it("stays linear on many slashes that are not at the end", () => {
+    const input = `${"/".repeat(100_000)}x`;
+    const started = performance.now();
+    expect(PathUtils.trimTrailingSlashes(input)).toBe(input);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+});

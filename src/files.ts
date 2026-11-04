@@ -56,6 +56,18 @@ export class PathUtils {
     return platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
   }
 
+  /**
+   * Drops trailing `/` characters, keeping at least `minLength` characters (1 keeps a lone `/`).
+   * A loop rather than `/\/+$/`, which backtracks polynomially on input with many slashes.
+   */
+  static trimTrailingSlashes(path: string, minLength = 0): string {
+    let end = path.length;
+    while (end > minLength && path[end - 1] === "/") {
+      end--;
+    }
+    return path.slice(0, end);
+  }
+
   /** `~` and `~/x` (or `~\\x`, as Windows users write it) resolve against the home directory. */
   static expandHome(path: string, homeDir: string): string {
     if (path === "~") {

@@ -8,7 +8,6 @@ import {
   DEFAULT_FORMATS,
   DEFAULT_MAX_FILE_SIZE_MB,
   FORMAT_ALIASES,
-  TRAILING_SLASHES_AFTER_NAME,
 } from "./constants";
 import { DotfileError } from "./errors";
 import { PathUtils } from "./files";
@@ -146,7 +145,7 @@ function pathList(value: unknown, key: string, homeDir: string, configPath: stri
  * fail the zip.
  */
 function normalizeEntry(entry: string): string {
-  return posix.normalize(entry).replace(TRAILING_SLASHES_AFTER_NAME, "$1");
+  return PathUtils.trimTrailingSlashes(posix.normalize(entry), 1);
 }
 
 function parseSettings(settings: Table, configPath: string): DotfilesSettings {

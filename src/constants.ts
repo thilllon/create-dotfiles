@@ -52,9 +52,6 @@ export const CONFIG_BOOLEAN_SETTINGS = [
 export const PATH_SEPARATORS = /[\\/]/;
 export const BACKSLASHES = /\\/g;
 export const LEADING_DOT_SLASH = /^\.\//;
-export const TRAILING_SLASHES = /\/+$/;
-/** Trailing slashes after at least one character, so `/` alone is kept. */
-export const TRAILING_SLASHES_AFTER_NAME = /(.)\/+$/;
 
 // ---------------------------------------------------------------------------------------------
 // Collections

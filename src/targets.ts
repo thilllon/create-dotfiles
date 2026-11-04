@@ -17,8 +17,8 @@ import {
   SSH_CONFIG_FILE,
   SSH_DIR,
   SSH_PUBLIC_KEY_SUFFIX,
-  TRAILING_SLASHES,
 } from "./constants";
+import { PathUtils } from "./files";
 
 export type TargetGroup = "core" | "secrets" | "config-all" | "custom";
 
@@ -135,10 +135,9 @@ export class ExcludeRules {
     const paths: string[] = [];
 
     for (const raw of entries) {
-      const entry = raw
-        .replace(BACKSLASHES, "/")
-        .replace(LEADING_DOT_SLASH, "")
-        .replace(TRAILING_SLASHES, "");
+      const entry = PathUtils.trimTrailingSlashes(
+        raw.replace(BACKSLASHES, "/").replace(LEADING_DOT_SLASH, "")
+      );
       if (entry.includes("/")) {
         paths.push(entry);
       } else {
