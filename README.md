@@ -386,7 +386,25 @@ The API is a small set of classes, all exported with declarations:
 
 Every constant (default target lists, excludes, limits) is exported too. Pass `platform: "win32"` (or `"darwin"`, `"linux"`) in the options to plan for another OS. Everything is bundled; the package has no runtime dependencies.
 
-Upgrading from 2.x: the free functions became class methods, for example `collect` → `Collector.collect`, `resolveTargets` → `Planner.plan`, `writePlan(plan, o)` → `new Collector(plan, o).write()`, `restore` → `Restorer.restore`, `runInteractive(p, o)` → `new InteractiveSession(p, o).run()`, `format*` → `Reporter.*`, `targetsFor` → `Targets.forPlatform`, and `DEFAULT_TARGETS` → `Targets.forPlatform()`. The CLI is unchanged.
+Upgrading from 2.x, the free functions became class methods:
+
+| 2.x                                                                                                                            | 3.x                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `collect(o)`                                                                                                                   | `Collector.collect(o)`                                                                                   |
+| `writePlan(plan, o)`                                                                                                           | `new Collector(plan, o).write()`                                                                         |
+| `countByGroup`                                                                                                                 | `Collector.countByGroup`                                                                                 |
+| `resolveTargets(o)` / `filterPlan` / `scanEnvFiles` / `collectionName`                                                         | `Planner.plan(o)` / `Planner.filter` / `Planner.scanEnvFiles` / `Planner.collectionName`                 |
+| `restore(o)` / `findLatestCollection`                                                                                          | `Restorer.restore(o)` / `Restorer.findLatestCollection`                                                  |
+| `runInteractive(p, o)`                                                                                                         | `new InteractiveSession(p, o).run()`                                                                     |
+| `formatSummary` / `formatRestoreSummary` / `formatFoundTargets` / `formatNeverCopied` / `formatBytes` / `outputEncryptionNote` | `Reporter.summary` / `.restoreSummary` / `.foundTargets` / `.neverCopied` / `.bytes` / `.encryptionNote` |
+| `loadConfig` / `parseConfig`                                                                                                   | `Config.load` / `Config.parse`                                                                           |
+| `resolveOptions` / `parseFormats`                                                                                              | `Options.resolve` / `Options.parseFormats`                                                               |
+| `targetsFor(p)` / `resolveTargetPlatform` / `isEnvFile` / `isHardExcluded`                                                     | `Targets.forPlatform(p)` / `.resolvePlatform` / `.isEnvFile` / `.isHardExcluded`                         |
+| `DEFAULT_TARGETS`                                                                                                              | `Targets.forPlatform()`                                                                                  |
+| `isExcluded(path, compileExcludes(entries))`                                                                                   | `new ExcludeRules(entries).matches(path)`                                                                |
+| `zipPasswordProblem` / `assertZipPassword` / `generateZipPassword` / `zipPasswordFromEnv` / `requireZipPasswordFromEnv`        | `ZipPassword.problem` / `.assert` / `.generate` / `.fromEnv` / `.requireFromEnv`                         |
+
+Constants keep their names and are all exported from the package root. The CLI is unchanged.
 
 ## Guarantees worth knowing
 
