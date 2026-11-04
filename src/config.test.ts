@@ -1,11 +1,12 @@
 import { readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CONFIG_FILE, loadConfig, parseConfig } from "./config";
+import { makeTempDir } from "../test/helpers";
+import { Config, Options } from "./config";
+import { CONFIG_FILE } from "./constants";
 import { DotfileError } from "./errors";
-import { makeTempDir } from "./test-helpers";
 
-describe("loadConfig", () => {
+describe("Config.load", () => {
   let home: string;
 
   beforeEach(() => {
@@ -17,7 +18,7 @@ describe("loadConfig", () => {
   });
 
   it("returns an empty config and creates nothing when the file is missing", () => {
-    expect(loadConfig(home)).toEqual({ include: [], exclude: [], settings: {} });
+    expect(Config.load(home)).toEqual({ include: [], exclude: [], settings: {} });
     expect(readdirSync(home)).toEqual([]);
   });
 
@@ -39,7 +40,7 @@ describe("loadConfig", () => {
       ].join("\n")
     );
 
-    expect(loadConfig(home)).toEqual({
+    expect(Config.load(home)).toEqual({
       include: [".config/app", "notes/todo.md"],
       exclude: ["secret", ".config/app/tmp"],
       settings: {
@@ -59,22 +60,22 @@ describe("loadConfig", () => {
       `[files]\nlist = [".zshrc", ".config/app"]\ninclude = [".config/app", ".vimrc"]\n`
     );
 
-    expect(loadConfig(home).include).toEqual([".zshrc", ".config/app", ".vimrc"]);
+    expect(Config.load(home).include).toEqual([".zshrc", ".config/app", ".vimrc"]);
   });
 
   it("names the config path in errors", () => {
     writeFileSync(join(home, CONFIG_FILE), "[files]\ninclude = 1\n");
 
-    expect(() => loadConfig(home)).toThrow(join(home, CONFIG_FILE));
+    expect(() => Config.load(home)).toThrow(join(home, CONFIG_FILE));
   });
 });
 
-describe("parseConfig", () => {
+describe("Config.parse", () => {
   const home = "/home/example";
 
   it("accepts an empty document and sections without keys", () => {
-    expect(parseConfig("", home)).toEqual({ include: [], exclude: [], settings: {} });
-    expect(parseConfig("[files]\n[settings]\n", home)).toEqual({
+    expect(Config.parse("", home)).toEqual({ include: [], exclude: [], settings: {} });
+    expect(Config.parse("[files]\n[settings]\n", home)).toEqual({
       include: [],
       exclude: [],
       settings: {},
@@ -82,7 +83,7 @@ describe("parseConfig", () => {
   });
 
   it("normalizes include and exclude entries to one spelling per path", () => {
-    const config = parseConfig(
+    const config = Config.parse(
       [
         "[files]",
         'include = ["./x", "b/", "a/../b", "c//d/", "spaces dir/ünï cödé.txt"]',
@@ -96,7 +97,7 @@ describe("parseConfig", () => {
   });
 
   it("normalizes entries written with backslashes to / on every host", () => {
-    const config = parseConfig(
+    const config = Config.parse(
       [
         "[files]",
         'include = ["AppData\\\\Roaming\\\\Code\\\\User", ".\\\\work\\\\", "a\\\\..\\\\b", "mixed/style\\\\path"]',
@@ -110,10 +111,10 @@ describe("parseConfig", () => {
   });
 
   it("quotes the user's own spelling when a backslash entry is rejected", () => {
-    expect(() => parseConfig('[files]\ninclude = ["..\\\\escape"]', home)).toThrow(
+    expect(() => Config.parse('[files]\ninclude = ["..\\\\escape"]', home)).toThrow(
       /must stay inside .*, got "\.\.\\escape"/
     );
-    expect(() => parseConfig('[files]\ninclude = ["a\\\\..\\\\..\\\\x"]', home)).toThrow(
+    expect(() => Config.parse('[files]\ninclude = ["a\\\\..\\\\..\\\\x"]', home)).toThrow(
       /got "a\\\.\.\\\.\.\\x"/
     );
   });
@@ -122,9 +123,9 @@ describe("parseConfig", () => {
     "rejects the absolute path %s on every host",
     (entry) => {
       const content = `[files]\ninclude = [${JSON.stringify(entry)}]`;
-      expect(() => parseConfig(content, home)).toThrow(DotfileError);
-      expect(() => parseConfig(content, home)).toThrow(/must be a relative path/);
-      expect(() => parseConfig(content, home)).toThrow(entry);
+      expect(() => Config.parse(content, home)).toThrow(DotfileError);
+      expect(() => Config.parse(content, home)).toThrow(/must be a relative path/);
+      expect(() => Config.parse(content, home)).toThrow(entry);
     }
   );
 
@@ -171,18 +172,48 @@ describe("parseConfig", () => {
     ["a non-string out", "[settings]\nout = 3", /out must be a non-empty string/],
     ["an empty out", '[settings]\nout = ""', /out must be a non-empty string/],
   ])("rejects %s with a DotfileError", (_label, content, message) => {
-    expect(() => parseConfig(content, home)).toThrow(DotfileError);
-    expect(() => parseConfig(content, home)).toThrow(message);
+    expect(() => Config.parse(content, home)).toThrow(DotfileError);
+    expect(() => Config.parse(content, home)).toThrow(message);
   });
 
   it("does not leak the TOML parser's error class name", () => {
     let error: unknown;
     try {
-      parseConfig("[files\nx", home);
+      Config.parse("[files\nx", home);
     } catch (err) {
       error = err;
     }
     expect(error).toBeInstanceOf(DotfileError);
     expect((error as Error).name).toBe("DotfileError");
+  });
+});
+
+describe("Options.parseFormats", () => {
+  it("parses a comma-separated list in order without duplicates", () => {
+    expect(Options.parseFormats("zip,folder,zip")).toEqual(["zip", "folder"]);
+  });
+
+  it("accepts tar.gz and tgz, in any case, as spellings of tar", () => {
+    expect(Options.parseFormats("tar.gz,tgz")).toEqual(["tar"]);
+    expect(Options.parseFormats("Tar.Gz,TGZ,tar")).toEqual(["tar"]);
+  });
+
+  it("accepts an already split list, trimming and ignoring case", () => {
+    expect(Options.parseFormats([" folder ", "TAR", "zip,"])).toEqual(["folder", "tar", "zip"]);
+  });
+
+  it("rejects an unknown format with a DotfileError naming the value", () => {
+    expect(() => Options.parseFormats("folder,rar")).toThrow(DotfileError);
+    expect(() => Options.parseFormats("folder,rar")).toThrow(/"rar"/);
+  });
+
+  it("reports a value that is neither text nor a list as unknown instead of crashing", () => {
+    expect(() => Options.parseFormats(0 as never)).toThrow(DotfileError);
+    expect(() => Options.parseFormats(0 as never)).toThrow('Unknown output format "0"');
+  });
+
+  it("rejects an empty selection", () => {
+    expect(() => Options.parseFormats("")).toThrow(DotfileError);
+    expect(() => Options.parseFormats([" , "])).toThrow(/At least one output format/);
   });
 });

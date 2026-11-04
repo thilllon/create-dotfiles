@@ -352,18 +352,59 @@ Explicit flags win over the file, which wins over the built-in defaults. Entries
 ## Use as a library
 
 ```ts
-import { collect, restore } from "create-dotfiles";
+import { Collector, Planner, Restorer } from "create-dotfiles";
 
-const summary = await collect({ formats: ["folder", "zip"], includeEnv: false });
+const summary = await Collector.collect({ formats: ["folder", "zip"], includeEnv: false });
 console.log(summary);
 
 // AES-256 zip; a function is called only if the zip really is encrypted.
-await collect({ formats: ["zip"], encryptZip: true, zipPassword: () => readSecretSomehow() });
+await Collector.collect({
+  formats: ["zip"],
+  encryptZip: true,
+  zipPassword: () => readSecretSomehow(),
+});
 
-restore({ force: false });
+// Plan first (what --dry-run prints), then write that plan.
+const plan = Planner.plan({ formats: ["tar"] });
+await new Collector(plan).write();
+
+Restorer.restore({ force: false });
 ```
 
-`collect`, `resolveTargets` (the planning step behind `--dry-run`), `restore`, `runInteractive` (bring your own prompter), the option and summary types, `DEFAULT_TARGETS` (this OS) and `targetsFor(platform)` are all exported with declarations. Pass `platform: "win32"` (or `"darwin"`, `"linux"`) in the options to plan for another OS. Everything is bundled; the package has no runtime dependencies.
+The API is a small set of classes, all exported with declarations:
+
+| Class                     | What it does                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Planner`                 | `plan(options)` scans and returns a `Plan` without writing; `filter(plan, overrides)` narrows it without rescanning                |
+| `Collector`               | `new Collector(plan, options).write()` stages and writes folder/zip/tar; `Collector.collect(options)` plans and writes in one step |
+| `Restorer`                | `Restorer.restore(options)` copies a collection back; `findLatestCollection(homeDir)`                                              |
+| `InteractiveSession`      | `new InteractiveSession(prompter, options).run()`: the interactive flow with your own `Prompter`                                   |
+| `Reporter`                | The text summaries the CLI prints                                                                                                  |
+| `Config`, `Options`       | `~/.dotfilesrc.toml` loading and option resolution (flags > config > defaults)                                                     |
+| `Targets`, `ExcludeRules` | Default targets per platform (`Targets.forPlatform("win32")`) and the never-copied rules                                           |
+| `ZipPassword`             | Password policy, generator, and the environment readers                                                                            |
+
+Every constant (default target lists, excludes, limits) is exported too. Pass `platform: "win32"` (or `"darwin"`, `"linux"`) in the options to plan for another OS. Everything is bundled; the package has no runtime dependencies.
+
+Upgrading from 2.x, the free functions became class methods:
+
+| 2.x                                                                                                                            | 3.x                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `collect(o)`                                                                                                                   | `Collector.collect(o)`                                                                                   |
+| `writePlan(plan, o)`                                                                                                           | `new Collector(plan, o).write()`                                                                         |
+| `countByGroup`                                                                                                                 | `Collector.countByGroup`                                                                                 |
+| `resolveTargets(o)` / `filterPlan` / `scanEnvFiles` / `collectionName`                                                         | `Planner.plan(o)` / `Planner.filter` / `Planner.scanEnvFiles` / `Planner.collectionName`                 |
+| `restore(o)` / `findLatestCollection`                                                                                          | `Restorer.restore(o)` / `Restorer.findLatestCollection`                                                  |
+| `runInteractive(p, o)`                                                                                                         | `new InteractiveSession(p, o).run()`                                                                     |
+| `formatSummary` / `formatRestoreSummary` / `formatFoundTargets` / `formatNeverCopied` / `formatBytes` / `outputEncryptionNote` | `Reporter.summary` / `.restoreSummary` / `.foundTargets` / `.neverCopied` / `.bytes` / `.encryptionNote` |
+| `loadConfig` / `parseConfig`                                                                                                   | `Config.load` / `Config.parse`                                                                           |
+| `resolveOptions` / `parseFormats`                                                                                              | `Options.resolve` / `Options.parseFormats`                                                               |
+| `targetsFor(p)` / `resolveTargetPlatform` / `isEnvFile` / `isHardExcluded`                                                     | `Targets.forPlatform(p)` / `.resolvePlatform` / `.isEnvFile` / `.isHardExcluded`                         |
+| `DEFAULT_TARGETS`                                                                                                              | `Targets.forPlatform()`                                                                                  |
+| `isExcluded(path, compileExcludes(entries))`                                                                                   | `new ExcludeRules(entries).matches(path)`                                                                |
+| `zipPasswordProblem` / `assertZipPassword` / `generateZipPassword` / `zipPasswordFromEnv` / `requireZipPasswordFromEnv`        | `ZipPassword.problem` / `.assert` / `.generate` / `.fromEnv` / `.requireFromEnv`                         |
+
+Constants keep their names and are all exported from the package root. The CLI is unchanged.
 
 ## Guarantees worth knowing
 

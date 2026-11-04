@@ -1,11 +1,9 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { ARCHIVE_PATTERN, COLLECTION_NAME_PATTERN } from "./constants";
 import { DotfileError } from "./errors";
-import { expandHome } from "./options";
-import { isSamePath } from "./paths";
-import { COLLECTION_NAME_PATTERN } from "./targets";
-import { copyInto, walk } from "./walk";
+import { FileWalker, PathUtils } from "./files";
 
 export interface RestoreOptions {
   /** Directory to restore into. Defaults to `os.homedir()`. */
@@ -34,88 +32,104 @@ export interface RestoreSummary {
   failed: RestoreFailure[];
 }
 
-const ARCHIVE_PATTERN = /\.(zip|tar\.gz|tgz|tar)$/i;
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/** The newest `dotfiles-YYYYMMDD-HHMMSS` folder in `homeDir` (the name sorts by time). */
-export function findLatestCollection(homeDir: string): string | undefined {
-  const names = readdirSync(homeDir)
-    .filter((name) => COLLECTION_NAME_PATTERN.test(name) && isDirectory(join(homeDir, name)))
-    .sort();
-  const latest = names.at(-1);
-  return latest === undefined ? undefined : join(homeDir, latest);
-}
-
-function resolveSource(homeDir: string, source: string | undefined): string {
-  if (source === undefined) {
-    const latest = findLatestCollection(homeDir);
-    if (latest === undefined) {
-      throw new DotfileError(
-        `No dotfiles-YYYYMMDD-HHMMSS folder found in ${homeDir}. ` +
-          "Run create-dotfiles first, or pass the folder to restore from."
-      );
-    }
-    return latest;
-  }
-
-  const expanded = expandHome(source, homeDir);
-  let path = resolve(expanded);
-  // A bare folder name is most likely one of the collections in the home directory.
-  if (!existsSync(path) && !isAbsolute(expanded) && existsSync(join(homeDir, expanded))) {
-    path = join(homeDir, expanded);
-  }
-
-  if (!existsSync(path)) {
-    throw new DotfileError(`Restore source not found: ${path}`);
-  }
-  if (!isDirectory(path)) {
-    if (ARCHIVE_PATTERN.test(path)) {
-      throw new DotfileError(
-        `Restoring from an archive is not supported: ${path}. ` +
-          "Extract it first, then restore from the extracted dotfiles-YYYYMMDD-HHMMSS folder."
-      );
-    }
-    throw new DotfileError(`Restore source must be a directory: ${path}`);
-  }
-  if (isSamePath(path, homeDir)) {
-    throw new DotfileError("Restore source must be a collection folder, not the home directory");
-  }
-  return path;
-}
-
 /**
  * Copies every file in a collection folder back to the same relative path under the home
  * directory. Existing files are skipped unless `force` is set; nothing else is ever deleted.
  */
-export function restore(options: RestoreOptions = {}): RestoreSummary {
-  const homeDir = resolve(options.homeDir ?? homedir());
-  const force = options.force ?? false;
-  const source = resolveSource(homeDir, options.source);
-  const summary: RestoreSummary = { source, homeDir, force, restored: [], skipped: [], failed: [] };
+export class Restorer {
+  readonly homeDir: string;
+  readonly force: boolean;
+  readonly source: string;
 
-  walk(source, "", {
-    onFile: (file) => {
-      const destPath = join(homeDir, file.path);
-      try {
-        if (existsSync(destPath) && !force) {
-          summary.skipped.push(file.path);
-          return;
+  /** Resolves the source folder; an unusable one is a {@link DotfileError}. */
+  constructor(options: RestoreOptions = {}) {
+    this.homeDir = resolve(options.homeDir ?? homedir());
+    this.force = options.force ?? false;
+    this.source = this.resolveSource(options.source);
+  }
+
+  /** Resolves the options and restores in one step. */
+  static restore(options: RestoreOptions = {}): RestoreSummary {
+    return new Restorer(options).run();
+  }
+
+  /** The newest `dotfiles-YYYYMMDD-HHMMSS` folder in `homeDir` (the name sorts by time). */
+  static findLatestCollection(homeDir: string): string | undefined {
+    const names = readdirSync(homeDir)
+      .filter(
+        (name) => COLLECTION_NAME_PATTERN.test(name) && PathUtils.isDirectory(join(homeDir, name))
+      )
+      .sort();
+    const latest = names.at(-1);
+    return latest === undefined ? undefined : join(homeDir, latest);
+  }
+
+  run(): RestoreSummary {
+    const { homeDir, force, source } = this;
+    const summary: RestoreSummary = {
+      source,
+      homeDir,
+      force,
+      restored: [],
+      skipped: [],
+      failed: [],
+    };
+
+    new FileWalker({
+      onFile: (file) => {
+        const destPath = join(homeDir, file.path);
+        try {
+          if (existsSync(destPath) && !force) {
+            summary.skipped.push(file.path);
+            return;
+          }
+          PathUtils.copyInto(join(source, file.path), destPath);
+          summary.restored.push(file.path);
+        } catch (err) {
+          summary.failed.push({ path: file.path, error: (err as Error).message });
         }
-        copyInto(join(source, file.path), destPath);
-        summary.restored.push(file.path);
-      } catch (err) {
-        summary.failed.push({ path: file.path, error: (err as Error).message });
-      }
-    },
-    onError: (relPath, error) => summary.failed.push({ path: relPath, error: error.message }),
-  });
+      },
+      onError: (relPath, error) => summary.failed.push({ path: relPath, error: error.message }),
+    }).walk(source, "");
 
-  return summary;
+    return summary;
+  }
+
+  private resolveSource(source: string | undefined): string {
+    const { homeDir } = this;
+    if (source === undefined) {
+      const latest = Restorer.findLatestCollection(homeDir);
+      if (latest === undefined) {
+        throw new DotfileError(
+          `No dotfiles-YYYYMMDD-HHMMSS folder found in ${homeDir}. ` +
+            "Run create-dotfiles first, or pass the folder to restore from."
+        );
+      }
+      return latest;
+    }
+
+    const expanded = PathUtils.expandHome(source, homeDir);
+    let path = resolve(expanded);
+    // A bare folder name is most likely one of the collections in the home directory.
+    if (!existsSync(path) && !isAbsolute(expanded) && existsSync(join(homeDir, expanded))) {
+      path = join(homeDir, expanded);
+    }
+
+    if (!existsSync(path)) {
+      throw new DotfileError(`Restore source not found: ${path}`);
+    }
+    if (!PathUtils.isDirectory(path)) {
+      if (ARCHIVE_PATTERN.test(path)) {
+        throw new DotfileError(
+          `Restoring from an archive is not supported: ${path}. ` +
+            "Extract it first, then restore from the extracted dotfiles-YYYYMMDD-HHMMSS folder."
+        );
+      }
+      throw new DotfileError(`Restore source must be a directory: ${path}`);
+    }
+    if (PathUtils.isSamePath(path, homeDir)) {
+      throw new DotfileError("Restore source must be a collection folder, not the home directory");
+    }
+    return path;
+  }
 }

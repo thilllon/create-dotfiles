@@ -1,0 +1,145 @@
+# create-dotfiles architecture (v3). Render: d2 --layout elk docs/architecture.d2 docs/architecture.svg
+direction: down
+
+user: User {shape: person}
+
+entry: Entry points {
+  cli: "cli.ts\n(cac: collect | restore)"
+  lib: "index.ts\n(public library API)"
+}
+
+ui: Interactive {
+  session: InteractiveSession {
+    shape: class
+    "+run()": Promise<InteractiveResult>
+    "-askZipPassword()": "string | CANCEL"
+  }
+  prompter: "Prompter\n(interface)" {shape: diamond}
+  clack: ClackPrompter {
+    shape: class
+    "+confirm / multiselect / password / spinner": ""
+  }
+  clack -> prompter: implements {style.stroke-dash: 3}
+  session -> prompter: asks
+}
+
+core: Library core {
+  options: Options {
+    shape: class
+    "+resolve(PlanOptions)": ResolvedOptions
+    "+parseFormats(input)": "OutputFormat[]"
+  }
+  config: Config {
+    shape: class
+    "+load(homeDir)": DotfilesConfig
+    "+parse(toml, homeDir)": DotfilesConfig
+  }
+  planner: Planner {
+    shape: class
+    "+plan(PlanOptions)": Plan
+    "+filter(plan, overrides)": Plan
+    "+scanEnvFiles(...)": void
+  }
+  scan: "HomeScan\n(private)" {
+    shape: class
+    "+run()": ScanResult
+  }
+  targets: Targets {
+    shape: class
+    "+forPlatform(platform)": "TargetSpec[]"
+    "+isHardExcluded(path)": boolean
+  }
+  rules: ExcludeRules {
+    shape: class
+    "+matches(path)": boolean
+  }
+  collector: Collector {
+    shape: class
+    "+collect(CollectOptions)": Promise<CollectSummary>
+    "+write()": Promise<CollectSummary>
+    "-writePlainZip / writeEncryptedZip / writeTar": ""
+  }
+  zippw: ZipPassword {
+    shape: class
+    "+problem / assert / generate": ""
+    "+fromEnv / requireFromEnv": ""
+  }
+  restorer: Restorer {
+    shape: class
+    "+restore(RestoreOptions)": RestoreSummary
+    "+run()": RestoreSummary
+  }
+  reporter: Reporter {
+    shape: class
+    "+summary / restoreSummary": string
+    "+foundTargets / neverCopied": string
+  }
+
+  options -> config: loads
+  planner -> options: resolves
+  planner -> scan: runs
+  scan -> targets: default list
+  scan -> rules: excludes
+  rules -> targets: hard excludes
+  collector -> planner: "collect() plans first"
+  collector -> zippw: validates password
+}
+
+infra: Shared {
+  files: "files.ts" {
+    paths: PathUtils {
+      shape: class
+      "+toPosix / archiveEntryName / expandHome": ""
+      "+copyInto / entryExists": ""
+    }
+    walker: FileWalker {
+      shape: class
+      "+walk(abs, rel)": "follows symlinks, detects loops"
+    }
+  }
+  constants: "constants.ts\n(every constant: targets, excludes,\n.env scan, formats, password policy)" {shape: cylinder}
+  errors: "DotfileError" {shape: hexagon}
+}
+
+ext: Bundled dependencies {
+  yazl: "yazl\n(plain zip)"
+  zipjs: "@zip.js/zip.js\n(AES-256 zip, lazy chunk)"
+  tar: "tar\n(tar.gz)"
+  toml: "smol-toml"
+  clackpkg: "@clack/prompts"
+}
+
+disk: Filesystem {
+  home: "~ (home directory)\ndotfiles + .dotfilesrc.toml" {shape: cylinder}
+  out: "dotfiles-YYYYMMDD-HHMMSS/\n.zip / .tar.gz" {shape: cylinder}
+}
+
+user -> entry.cli: "npx create-dotfiles"
+user -> entry.lib: "import { Collector }"
+
+entry.cli -> ui.session: "TTY"
+entry.cli -> core.collector: "--auto / non-TTY"
+entry.cli -> core.restorer: "restore"
+entry.cli -> core.reporter: prints
+entry.cli -> ui.clack: creates
+
+ui.session -> core.planner: "plan once, filter per answer"
+ui.session -> core.collector: write
+ui.session -> core.reporter: notes
+
+core.scan -> infra.files.walker: walks targets
+core.restorer -> infra.files.walker: walks collection
+core.collector -> infra.files.paths: copies
+core.config -> ext.toml
+core.collector -> ext.yazl
+core.collector -> ext.zipjs
+core.collector -> ext.tar
+ui.clack -> ext.clackpkg
+
+core -> infra.constants: imports {style.stroke-dash: 3}
+core -> infra.errors: throws {style.stroke-dash: 3}
+
+core.scan -> disk.home: reads
+core.config -> disk.home: reads .dotfilesrc.toml
+core.collector -> disk.out: writes
+core.restorer -> disk.home: copies back

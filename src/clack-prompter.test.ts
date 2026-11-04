@@ -1,7 +1,7 @@
 import * as clack from "@clack/prompts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createClackPrompter } from "./clack-prompter";
-import { CANCEL } from "./interactive";
+import { ClackPrompter } from "./clack-prompter";
+import { CANCEL } from "./constants";
 
 // The prompts are mocked, but clack's cancel value and its check are the real ones, so the
 // adapter is tested against how clack actually signals a cancelled prompt.
@@ -26,13 +26,13 @@ const mocked = vi.mocked(clack);
 // meets multiselect's generic return type.
 const CLACK_CANCEL: typeof clack.CANCEL_SYMBOL = clack.CANCEL_SYMBOL;
 
-describe("createClackPrompter", () => {
+describe("ClackPrompter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("forwards intro, outro, cancel and note", () => {
-    const prompter = createClackPrompter();
+    const prompter = new ClackPrompter();
 
     prompter.intro("title");
     prompter.outro("bye");
@@ -50,7 +50,7 @@ describe("createClackPrompter", () => {
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(CLACK_CANCEL);
-    const prompter = createClackPrompter();
+    const prompter = new ClackPrompter();
     const prompt = { message: "Proceed?", initialValue: true };
 
     await expect(prompter.confirm(prompt)).resolves.toBe(true);
@@ -61,7 +61,7 @@ describe("createClackPrompter", () => {
 
   it("returns multiselect answers and maps clack's cancel symbol to CANCEL", async () => {
     mocked.multiselect.mockResolvedValueOnce(["zip", "tar"]).mockResolvedValueOnce(CLACK_CANCEL);
-    const prompter = createClackPrompter();
+    const prompter = new ClackPrompter();
     const prompt = {
       message: "Output formats",
       options: [{ value: "zip", label: "zip" }],
@@ -79,7 +79,7 @@ describe("createClackPrompter", () => {
       .mockResolvedValueOnce("correct horse battery staple")
       .mockResolvedValueOnce(undefined as unknown as string)
       .mockResolvedValueOnce(CLACK_CANCEL);
-    const prompter = createClackPrompter();
+    const prompter = new ClackPrompter();
 
     await expect(prompter.password({ message: "Zip password" })).resolves.toBe(
       "correct horse battery staple"
@@ -93,7 +93,7 @@ describe("createClackPrompter", () => {
     mocked.password.mockResolvedValueOnce("x");
     const validate = vi.fn((value: string) => (value === "" ? "empty" : undefined));
 
-    await createClackPrompter().password({ message: "Zip password", validate });
+    await new ClackPrompter().password({ message: "Zip password", validate });
 
     // clack types validate as a function or a Standard Schema; the adapter always passes a function.
     const passed = mocked.password.mock.calls[0][0].validate as (
@@ -107,7 +107,7 @@ describe("createClackPrompter", () => {
   it("drives a clack spinner", () => {
     const spin = { start: vi.fn(), message: vi.fn(), stop: vi.fn() };
     mocked.spinner.mockReturnValue(spin as unknown as ReturnType<typeof clack.spinner>);
-    const prompter = createClackPrompter();
+    const prompter = new ClackPrompter();
 
     const handle = prompter.spinner();
     handle.start("Scanning");

@@ -2,19 +2,25 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import { join } from "node:path";
 import { unzipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  createFile,
+  FIXED_DATE,
+  FIXED_NAME,
+  makeTempDir,
+  readAesZip,
+  TEST_PLATFORM,
+} from "../test/helpers";
+import { CANCEL } from "./constants";
 import { DotfileError } from "./errors";
 import {
-  CANCEL,
   type Cancelled,
   type ConfirmPrompt,
   type InteractiveOptions,
   type MultiselectPrompt,
   type PasswordPrompt,
+  InteractiveSession,
   type Prompter,
-  runInteractive,
 } from "./interactive";
-import { readAesZip } from "./test-aes-zip";
-import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "./test-helpers";
 
 interface Script {
   confirm?: (boolean | Cancelled)[];
@@ -63,7 +69,9 @@ class FakePrompter implements Prompter {
     this.confirms.push(prompt);
     this.events.push(`confirm:${prompt.message}`);
     const answer = this.script.confirm?.shift();
-    if (answer === undefined) throw new Error(`unscripted confirm: ${prompt.message}`);
+    if (answer === undefined) {
+      throw new Error(`unscripted confirm: ${prompt.message}`);
+    }
     return answer;
   }
 
@@ -71,7 +79,9 @@ class FakePrompter implements Prompter {
     this.multiselects.push(prompt as MultiselectPrompt<string>);
     this.events.push(`multiselect:${prompt.message}`);
     const answer = this.script.multiselect?.shift();
-    if (answer === undefined) throw new Error(`unscripted multiselect: ${prompt.message}`);
+    if (answer === undefined) {
+      throw new Error(`unscripted multiselect: ${prompt.message}`);
+    }
     return answer as T[] | Cancelled;
   }
 
@@ -81,10 +91,16 @@ class FakePrompter implements Prompter {
     this.events.push(`password:${prompt.message}`);
     for (;;) {
       const answer = this.script.password?.shift();
-      if (answer === undefined) throw new Error(`unscripted password: ${prompt.message}`);
-      if (answer === CANCEL) return answer;
+      if (answer === undefined) {
+        throw new Error(`unscripted password: ${prompt.message}`);
+      }
+      if (answer === CANCEL) {
+        return answer;
+      }
       const problem = prompt.validate?.(answer);
-      if (problem === undefined) return answer;
+      if (problem === undefined) {
+        return answer;
+      }
       this.passwordRejections.push(problem);
     }
   }
@@ -99,7 +115,7 @@ class FakePrompter implements Prompter {
   }
 }
 
-describe("runInteractive", () => {
+describe("InteractiveSession", () => {
   let home: string;
   let out: string;
 
@@ -121,13 +137,13 @@ describe("runInteractive", () => {
   });
 
   const run = (prompter: Prompter, options: InteractiveOptions = {}) =>
-    runInteractive(prompter, {
+    new InteractiveSession(prompter, {
       homeDir: home,
       outDir: out,
       now: FIXED_DATE,
       platform: TEST_PLATFORM,
       ...options,
-    });
+    }).run();
 
   const accept = (script: Script = {}) =>
     new FakePrompter({
@@ -194,7 +210,9 @@ describe("runInteractive", () => {
     const result = await run(prompter);
 
     expect(result.cancelled).toBe(false);
-    if (result.cancelled) return;
+    if (result.cancelled) {
+      return;
+    }
     expect(result.summary.counts).toEqual({ core: 3, secrets: 0, "config-all": 0, custom: 0 });
     expect(readdirSync(out)).toEqual([FIXED_NAME]);
     expect(readFileSync(join(out, FIXED_NAME, ".zshrc"), "utf8")).toBe("export ZSH=1");
@@ -212,7 +230,9 @@ describe("runInteractive", () => {
     const result = await run(prompter);
 
     expect(result.cancelled).toBe(false);
-    if (result.cancelled) return;
+    if (result.cancelled) {
+      return;
+    }
     expect(result.summary.counts).toEqual({ core: 3, secrets: 3, "config-all": 1, custom: 0 });
     expect(readdirSync(out).sort()).toEqual([`${FIXED_NAME}.tar.gz`, `${FIXED_NAME}.zip`]);
     const names = Object.keys(unzipSync(readFileSync(join(out, `${FIXED_NAME}.zip`))));
@@ -239,7 +259,9 @@ describe("runInteractive", () => {
     expect(prompter.multiselects[0].initialValues).toEqual(["zip", "tar"]);
     expect(prompter.notes[1].message).toContain("larger than 3 MB");
     expect(result.cancelled).toBe(false);
-    if (result.cancelled) return;
+    if (result.cancelled) {
+      return;
+    }
     expect(result.summary.counts).toEqual({ core: 3, secrets: 0, "config-all": 0, custom: 0 });
     expect(result.summary.formats).toEqual(["folder"]);
     expect(readdirSync(out)).toEqual([FIXED_NAME]);
@@ -321,7 +343,9 @@ describe("runInteractive", () => {
       { title: "Output formats", message: "Select at least one output format." },
     ]);
     expect(result.cancelled).toBe(false);
-    if (result.cancelled) return;
+    if (result.cancelled) {
+      return;
+    }
     expect(result.summary.formats).toEqual(["tar"]);
     expect(readdirSync(out)).toEqual([`${FIXED_NAME}.tar.gz`]);
   });
@@ -332,7 +356,9 @@ describe("runInteractive", () => {
     const result = await run(prompter, { dryRun: true });
 
     expect(result.cancelled).toBe(false);
-    if (result.cancelled) return;
+    if (result.cancelled) {
+      return;
+    }
     expect(result.summary.dryRun).toBe(true);
     expect(existsSync(out)).toBe(false);
     const dry = prompter.notes.find((n) => n.title === "Dry run");
@@ -567,7 +593,11 @@ describe("runInteractive", () => {
     const empty = makeTempDir();
     const prompter = accept();
     try {
-      await runInteractive(prompter, { homeDir: empty, now: FIXED_DATE, platform: TEST_PLATFORM });
+      await new InteractiveSession(prompter, {
+        homeDir: empty,
+        now: FIXED_DATE,
+        platform: TEST_PLATFORM,
+      }).run();
 
       expect(prompter.notes[0].message).toMatch(/No dotfiles .* found/);
       expect(prompter.confirms[0].message).toContain(".env files found by scan: 0");
