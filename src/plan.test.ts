@@ -3,6 +3,11 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Config, type DotfilesConfig, type PlanOptions } from "./config";
+import { CUSTOM_CATEGORY, ENV_SCAN_SKIPPED_FOLDERS, ENV_SCAN_TARGET } from "./constants";
+import { DotfileError } from "./errors";
+import { type Plan, Planner } from "./plan";
+import { Targets } from "./targets";
 import {
   canSymlink,
   createFile,
@@ -12,12 +17,7 @@ import {
   makeTempDir,
   symlinkDir,
   TEST_PLATFORM,
-} from "../test/helpers";
-import { Config, type DotfilesConfig, type PlanOptions } from "./config";
-import { CUSTOM_CATEGORY, ENV_SCAN_SKIPPED_FOLDERS, ENV_SCAN_TARGET } from "./constants";
-import { DotfileError } from "./errors";
-import { type Plan, Planner } from "./plan";
-import { Targets } from "./targets";
+} from "./tests/helpers";
 
 describe("Planner.collectionName", () => {
   it("formats local time as dotfiles-YYYYMMDD-HHMMSS", () => {

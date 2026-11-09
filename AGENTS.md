@@ -49,8 +49,8 @@ src/
   clack-prompter.ts    # ClackPrompter: Prompter implemented on @clack/prompts
   errors.ts            # DotfileError
   *.test.ts            # colocated tests; cli.test.ts spawns the CLI with HOME/USERPROFILE in a temp dir
-test/
-  helpers.ts           # test-only: temp homes and fixtures, platform probes, WinZip AES reader on node:crypto
+  tests/
+    helpers.ts         # test-only: temp homes and fixtures, platform probes, WinZip AES reader on node:crypto
 docs/
   architecture.d2      # architecture diagram (source); architecture.svg is rendered from it with `d2`
 dist/                  # cli.cjs (bin), index.cjs, index.d.cts, and zip-core-custom-*.cjs chunks (zip.js, loaded only to encrypt)
@@ -91,7 +91,7 @@ Releases happen only in CI (see below): never run `changeset version` or `change
   belongs to rather than a new module of free functions
 - Every constant lives in `src/constants.ts`; modules import from there and never declare their own
 - No braceless `if`: `if (x) return y;` is a lint error (`curly: all`); the body goes on its own line
-- Test-only code lives in `test/helpers.ts`; tests themselves stay colocated as `src/*.test.ts`
+- Test-only code lives in `src/tests/` (excluded from coverage, never imported by the library); tests themselves stay colocated as `src/*.test.ts`
 
 ## Git Conventions
 
@@ -298,7 +298,7 @@ exclude = [".config/kitty", "Snapshots"] # paths or directory names to exclude
 - The interactive flow is tested through a fake `Prompter`; `clack-prompter.ts` is tested with
   `@clack/prompts` mocked. No test drives a real TTY
 - Zip contents are verified by reading the central directory with `fflate`; tar contents with
-  `tar.list`. Encrypted zips are decrypted by `readAesZip` in `test/helpers.ts`, written from the WinZip AE-x spec
+  `tar.list`. Encrypted zips are decrypted by `readAesZip` in `src/tests/helpers.ts`, written from the WinZip AE-x spec
   on node:crypto (PBKDF2, verifier, HMAC-SHA1-80, little-endian AES-CTR). It never trusts zip.js to
   check its own output. It also asserts AES-256, AE-2 and a zero CRC, so a zip.js update cannot
   silently weaken the format. Dependabot's minor/patch auto-merge bumps zip.js too; this test is

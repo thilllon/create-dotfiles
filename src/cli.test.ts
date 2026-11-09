@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { unzipSync } from "fflate";
 import { list as tarList } from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createFile, makeTempDir, readAesZip } from "../test/helpers";
+import { createFile, makeTempDir, readAesZip } from "./tests/helpers";
 
 // Vitest runs with the project root as cwd, so paths resolve from there. tsx is started as
 // a JS entry under the current node binary rather than through node_modules/.bin, which on

@@ -1,10 +1,10 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "../test/helpers";
 import { Collector } from "./collect";
 import { Config } from "./config";
 import { Reporter } from "./report";
+import { createFile, FIXED_DATE, FIXED_NAME, makeTempDir, TEST_PLATFORM } from "./tests/helpers";
 
 describe("Reporter.bytes", () => {
   it.each([

@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createFile, makeTempDir } from "../test/helpers";
 import { DotfileError } from "./errors";
 import { Restorer } from "./restore";
+import { createFile, makeTempDir } from "./tests/helpers";
 
 describe("Restorer.findLatestCollection", () => {
   let home: string;

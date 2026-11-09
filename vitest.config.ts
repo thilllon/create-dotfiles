@@ -11,7 +11,7 @@ export default defineConfig({
       // subprocess (the only way to catch module-load side effects such as `--help`
       // writing to $HOME). v8 cannot instrument across that process boundary, so the file
       // would always report 0% and drag the thresholds down.
-      exclude: ["src/**/*.test.ts", "src/cli.ts"],
+      exclude: ["src/**/*.test.ts", "src/tests/**", "src/cli.ts"],
       reporter: ["text", "lcov"],
       thresholds: {
         statements: 95,

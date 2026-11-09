@@ -1,9 +1,9 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFile, FIXED_DATE, makeTempDir, TEST_PLATFORM } from "../test/helpers";
 import type { WalkedFile } from "./files";
 import { Planner } from "./plan";
+import { createFile, FIXED_DATE, makeTempDir, TEST_PLATFORM } from "./tests/helpers";
 
 /**
  * Windows homes hold entries the process may not read: `NTUSER.DAT` and locked files fail
