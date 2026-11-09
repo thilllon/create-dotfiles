@@ -17,16 +17,6 @@ import { dirname, join, relative, sep } from "node:path";
 import { strFromU8, unzipSync } from "fflate";
 import { list as tarList } from "tar";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  canSymlink,
-  createFile,
-  FIXED_DATE,
-  FIXED_NAME,
-  IS_WINDOWS,
-  makeTempDir,
-  readAesZip,
-  TEST_PLATFORM,
-} from "../test/helpers";
 import { type CollectOptions, type CollectProgress, Collector, ZipPassword } from "./collect";
 import { Config } from "./config";
 import {
@@ -38,6 +28,16 @@ import {
 import { DotfileError } from "./errors";
 import { PathUtils } from "./files";
 import { Planner } from "./plan";
+import {
+  canSymlink,
+  createFile,
+  FIXED_DATE,
+  FIXED_NAME,
+  IS_WINDOWS,
+  makeTempDir,
+  readAesZip,
+  TEST_PLATFORM,
+} from "./tests/helpers";
 
 async function tarEntries(file: string): Promise<{ path: string; type: string }[]> {
   const entries: { path: string; type: string }[] = [];

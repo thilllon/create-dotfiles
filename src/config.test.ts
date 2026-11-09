@@ -1,10 +1,10 @@
 import { readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { makeTempDir } from "../test/helpers";
 import { Config, Options } from "./config";
 import { CONFIG_FILE } from "./constants";
 import { DotfileError } from "./errors";
+import { makeTempDir } from "./tests/helpers";
 
 describe("Config.load", () => {
   let home: string;

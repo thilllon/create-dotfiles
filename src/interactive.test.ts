@@ -2,14 +2,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import { join } from "node:path";
 import { unzipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  createFile,
-  FIXED_DATE,
-  FIXED_NAME,
-  makeTempDir,
-  readAesZip,
-  TEST_PLATFORM,
-} from "../test/helpers";
 import { CANCEL } from "./constants";
 import { DotfileError } from "./errors";
 import {
@@ -21,6 +13,14 @@ import {
   InteractiveSession,
   type Prompter,
 } from "./interactive";
+import {
+  createFile,
+  FIXED_DATE,
+  FIXED_NAME,
+  makeTempDir,
+  readAesZip,
+  TEST_PLATFORM,
+} from "./tests/helpers";
 
 interface Script {
   confirm?: (boolean | Cancelled)[];
