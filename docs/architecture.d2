@@ -8,7 +8,7 @@ entry: Entry points {
   lib: "index.ts\n(public library API)"
 }
 
-ui: Interactive {
+ui: "interactive.ts" {
   session: InteractiveSession {
     shape: class
     "+run()": Promise<InteractiveResult>

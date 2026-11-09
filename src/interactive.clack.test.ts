@@ -1,7 +1,7 @@
 import * as clack from "@clack/prompts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ClackPrompter } from "./clack-prompter";
 import { CANCEL } from "./constants";
+import { ClackPrompter } from "./interactive";
 
 // The prompts are mocked, but clack's cancel value and its check are the real ones, so the
 // adapter is tested against how clack actually signals a cancelled prompt.

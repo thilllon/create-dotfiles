@@ -45,8 +45,7 @@ src/
   collect.ts           # Collector (stage files, write folder/zip/tar, summary) and ZipPassword (policy, generator, env readers)
   restore.ts           # Restorer: restore(), findLatestCollection()
   report.ts            # Reporter: summary, "found on this machine" and "never copied" text
-  interactive.ts       # InteractiveSession: the prompt flow behind a Prompter interface
-  clack-prompter.ts    # ClackPrompter: Prompter implemented on @clack/prompts
+  interactive.ts       # InteractiveSession (the prompt flow behind a Prompter interface) and ClackPrompter (Prompter on @clack/prompts)
   errors.ts            # DotfileError
   *.test.ts            # colocated tests; cli.test.ts spawns the CLI with HOME/USERPROFILE in a temp dir
   tests/
@@ -295,7 +294,7 @@ exclude = [".config/kitty", "Snapshots"] # paths or directory names to exclude
 - `src/cli.ts` is excluded from coverage thresholds on purpose: `cli.test.ts` exercises it by
   spawning a real subprocess (the only way to catch module-load side effects), and v8 cannot
   instrument across a process boundary. Keep `cli.ts` thin so that exclusion stays honest
-- The interactive flow is tested through a fake `Prompter`; `clack-prompter.ts` is tested with
+- The interactive flow is tested through a fake `Prompter`; `ClackPrompter` is tested in `interactive.clack.test.ts` with
   `@clack/prompts` mocked. No test drives a real TTY
 - Zip contents are verified by reading the central directory with `fflate`; tar contents with
   `tar.list`. Encrypted zips are decrypted by `readAesZip` in `src/tests/helpers.ts`, written from the WinZip AE-x spec
