@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import cac from "cac";
 import packageJson from "../package.json";
-import { ClackPrompter } from "./clack-prompter";
 import {
   type CollectOptions,
   Collector,
@@ -17,6 +16,7 @@ import {
   ZIP_PASSWORD_FILE_ENV,
   ZipPassword,
 } from "./index";
+import { ClackPrompter } from "./interactive";
 
 const cli = cac("create-dotfiles");
 
