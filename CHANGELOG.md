@@ -1,5 +1,11 @@
 # create-dotfiles
 
+## 3.1.0
+
+### Minor Changes
+
+- b83267e: Internal restructuring, with no change to the CLI's behaviour or the library API: `ClackPrompter` now lives in `interactive.ts` next to the `Prompter` interface it implements, and test-only helpers moved to `src/tests/`.
+
 ## 3.0.1
 
 ### Patch Changes
