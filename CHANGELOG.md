@@ -1,5 +1,11 @@
 # create-dotfiles
 
+## 3.1.1
+
+### Patch Changes
+
+- chore(deps-dev): bump the npm-minor-patch group with 5 updates (#55)
+
 ## 3.1.0
 
 ### Minor Changes
