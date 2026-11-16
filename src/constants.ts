@@ -4,6 +4,7 @@
  * Modules import from here; nothing in this file reads the disk or the environment.
  */
 import type { OutputFormat } from "./config";
+import type { EnvSortMode } from "./env";
 import type { SelectOption } from "./interactive";
 import type { TargetCategory, TargetGroup, TargetPlatform, TargetSpec } from "./targets";
 
@@ -430,3 +431,53 @@ export const FORMAT_OPTIONS: readonly SelectOption<OutputFormat>[] = [
 ];
 
 export const ZIP_PROTECTION_LABEL = " (AES-256, password-protected)";
+
+// ---------------------------------------------------------------------------------------------
+// Project .env files (env-example, env-sort)
+// ---------------------------------------------------------------------------------------------
+
+/** The file `env-example` writes, next to the `.env` files it reads. */
+export const ENV_EXAMPLE_FILE = ".env.example";
+
+/**
+ * Files that describe the variables rather than hold them: never read as a source for
+ * `env-example`. Any `.env.*` name ending in one of {@link ENV_TEMPLATE_SUFFIXES} counts too.
+ */
+export const ENV_TEMPLATE_FILES: readonly string[] = [
+  ".env.example",
+  ".env.sample",
+  ".env.template",
+];
+export const ENV_TEMPLATE_SUFFIXES: readonly string[] = [".example", ".sample", ".template"];
+
+/** A line starting with this opens a section; `env-sort --mode section` sorts inside each one. */
+export const ENV_SECTION_MARKER = "## ---";
+
+export const ENV_SORT_MODES: readonly EnvSortMode[] = ["section", "all"];
+export const DEFAULT_ENV_SORT_MODE: EnvSortMode = "section";
+
+/**
+ * `KEY=...`, `export KEY=...`, or dotenv's `KEY: ...` form; group 1 is the key. Everything up to
+ * the end of the match is the key part; the rest of the line is the value.
+ */
+export const ENV_KEY_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*=|:(?=\s|$))/;
+
+/** What a comment line starts with (after leading whitespace). */
+export const ENV_COMMENT_PREFIX = "#";
+
+/**
+ * `env-example` drops every comment line containing this: a commented-out assignment
+ * (`# API_KEY=sk-...`, `# old: TOKEN=...`) may hold a real value, wherever it sits in the line.
+ * Lines above a key that are not comments at all (a stray value, a broken multi-line value) are
+ * dropped too.
+ */
+export const ENV_ASSIGNMENT_SIGN = "=";
+
+/** A line break in text read from disk: `\n` or `\r\n`. */
+export const LINE_BREAK = /\r?\n/;
+
+/** The UTF-8 byte order mark as a character, kept on files that start with one. */
+export const BYTE_ORDER_MARK = "\uFEFF";
+
+/** Quote characters that may open a value spanning several lines. */
+export const ENV_QUOTES: readonly string[] = ['"', "'", "`"];

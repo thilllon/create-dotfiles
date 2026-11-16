@@ -73,6 +73,17 @@ core: Library core {
     shape: class
     "+summary / restoreSummary": string
     "+foundTargets / neverCopied": string
+    "+envExampleSummary / envSortSummary": string
+  }
+  envfile: EnvFile {
+    shape: class
+    "+parse / sort(text, mode) / keys": "section | all"
+    "+sortFiles(EnvSortOptions)": EnvSortSummary
+  }
+  envexample: EnvExample {
+    shape: class
+    "+build(sources, existing?)": "union of keys, values empty"
+    "+generate(EnvExampleOptions)": EnvExampleSummary
   }
 
   options -> config: loads
@@ -83,6 +94,8 @@ core: Library core {
   rules -> targets: hard excludes
   collector -> planner: "collect() plans first"
   collector -> zippw: validates password
+  envexample -> envfile: parses
+  envfile -> targets: isEnvFile
 }
 
 infra: Shared {
@@ -112,6 +125,7 @@ ext: Bundled dependencies {
 disk: Filesystem {
   home: "~ (home directory)\ndotfiles + .dotfilesrc.toml" {shape: cylinder}
   out: "dotfiles-YYYYMMDD-HHMMSS/\n.zip / .tar.gz" {shape: cylinder}
+  project: "project directory (cwd)\n.env, .env.*, .env.example" {shape: cylinder}
 }
 
 user -> entry.cli: "npx create-dotfiles"
@@ -120,6 +134,8 @@ user -> entry.lib: "import { Collector }"
 entry.cli -> ui.session: "TTY"
 entry.cli -> core.collector: "--auto / non-TTY"
 entry.cli -> core.restorer: "restore"
+entry.cli -> core.envexample: "env-example"
+entry.cli -> core.envfile: "env-sort"
 entry.cli -> core.reporter: prints
 entry.cli -> ui.clack: creates
 
@@ -143,3 +159,5 @@ core.scan -> disk.home: reads
 core.config -> disk.home: reads .dotfilesrc.toml
 core.collector -> disk.out: writes
 core.restorer -> disk.home: copies back
+core.envexample -> disk.project: "reads .env*, writes .env.example"
+core.envfile -> disk.project: "sorts in place"
