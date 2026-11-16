@@ -238,9 +238,10 @@ Releases happen only in CI (see below): never run `changeset version` or `change
 - **Project `.env` tools** (`env-example`, `env-sort`; `EnvExample`, `EnvFile` in `env.ts`) work on
   one directory, default the current one, never the home directory and never recursively. They
   read `.env` and `.env.*` regular files (`Targets.isEnvFile`).
-  - `env-example` writes `KEY=` lines only: values never reach the example. Only `#` comment lines
-    directly above a key come along, and only without `=` (a commented-out value); any other line
-    there (a stray value) is dropped. dotenv's `KEY: value` form counts as a key. An unclosed quote
+  - `env-example` writes `KEY=` lines only: values never reach the example. Of the lines directly above a key
+    only `## ---` headers come along by default (a comment may hold a secret); `--keep-comments`
+    (`keepComments`) adds the other `#` comments. A line with `=` (a commented-out value) and any
+    non-comment line there (a stray value) are never copied. dotenv's `KEY: value` form counts as a key. An unclosed quote
     is a single-line value, as in dotenv. Templates
     (`ENV_TEMPLATE_FILES`, `*.example`/`.sample`/`.template`) and the output file itself are never
     sources. An existing example is kept byte for byte and only missing keys are appended, in its line

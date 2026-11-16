@@ -469,7 +469,7 @@ export const ENV_COMMENT_PREFIX = "#";
  * `env-example` drops every comment line containing this: a commented-out assignment
  * (`# API_KEY=sk-...`, `# old: TOKEN=...`) may hold a real value, wherever it sits in the line.
  * Lines above a key that are not comments at all (a stray value, a broken multi-line value) are
- * dropped too.
+ * dropped too, and so is every other comment unless `keepComments` is set.
  */
 export const ENV_ASSIGNMENT_SIGN = "=";
 

@@ -292,6 +292,7 @@ default), never on the home directory, and never look into subdirectories.
 create-dotfiles env-example                  # ./.env.example from .env, .env.development, .env.production, ...
 create-dotfiles env-example apps/web         # another directory
 create-dotfiles env-example --sort section   # and sort the result
+create-dotfiles env-example --keep-comments  # copy the comments above each key too
 create-dotfiles env-example --dry-run        # print it, write nothing
 
 create-dotfiles env-sort                     # every .env* file here, inside each "## ---" section
@@ -301,8 +302,10 @@ create-dotfiles env-sort --check             # write nothing; exit 1 if a file i
 
 **`env-example`** writes the union of the keys of `.env` and every `.env.*` file, in the order
 they first appear, as `KEY=` with the value left empty, so no secret reaches a file you commit.
-Of the lines directly above a key, only `#` comments without `=` come along: a line with `=` may be
-a commented-out value, and a line that is not a comment at all may be a stray one. Templates (`.env.example`, `.env.sample`, `.env.template`, and any
+Comments are not copied, since a comment can hold a secret as easily as a value; only `## ---`
+section headers come along. `--keep-comments` copies the `#` comments directly above each key
+too, except any line containing `=` (a commented-out value). A line that is not a comment at all
+is never copied. Templates (`.env.example`, `.env.sample`, `.env.template`, and any
 `.env.*.example`) are never read. If `.env.example` already exists it is kept exactly as it is,
 placeholder values included, and only the missing keys are appended; running it again adds
 nothing. Keys that no longer appear in any `.env` file are left for you to remove.

@@ -265,6 +265,11 @@ export interface EnvExampleOptions {
   dir?: string;
   /** File to write. Defaults to `.env.example` in `dir`; relative paths resolve against `dir`. */
   out?: string;
+  /**
+   * Copy the `#` comments directly above each key (never one with `=`). Default false: a comment
+   * may hold a secret, so only `## ---` section headers are copied.
+   */
+  keepComments?: boolean;
   /** Sort the result as well. Default: leave the order as built. */
   sort?: EnvSortMode;
   /** Build the result without writing it. Default false. */
@@ -300,13 +305,16 @@ export class EnvExample {
   /**
    * The example text: `existing` (an earlier example file) kept as it is, then every key from
    * `sources` it lacks, in the order the keys first appear. Values are always left empty, so no
-   * secret reaches the example. Of the lines directly above a key only `#` comments without an
-   * `=` come along (see {@link isSafeComment}). The existing text is kept byte for byte.
+   * secret reaches the example. Of the lines directly above a key only `## ---` section headers
+   * come along, or with `keepComments` any `#` comment; never a line with `=` (see
+   * {@link carriedComment}). The existing text is kept byte for byte.
    */
   static build(
     sources: readonly EnvSource[],
-    existing?: string
+    existing?: string,
+    options: { keepComments?: boolean } = {}
   ): { content: string; added: string[] } {
+    const keepComments = options.keepComments ?? false;
     const seen = new Set(existing === undefined ? [] : EnvFile.keys(existing));
     const added: EnvEntry[] = [];
 
@@ -319,7 +327,7 @@ export class EnvExample {
           seen.add(entry.key);
           added.push({
             key: entry.key,
-            comments: entry.comments.filter(isSafeComment),
+            comments: entry.comments.filter((line) => carriedComment(line, keepComments)),
             lines: [`${entry.key}=`],
           });
         }
@@ -356,7 +364,7 @@ export class EnvExample {
 
     const created = !existsSync(path);
     const existing = created ? undefined : readText(path);
-    const built = EnvExample.build(sources, existing);
+    const built = EnvExample.build(sources, existing, { keepComments: options.keepComments });
     const content =
       options.sort === undefined ? built.content : EnvFile.sort(built.content, options.sort);
 
@@ -382,12 +390,17 @@ function formatEntries(entries: EnvEntry[], eol: EnvDocument["eol"]): string {
 }
 
 /**
- * Whether a line above a key may go into the example: a `#` comment that holds no `=`. Anything
- * else (a commented-out assignment, a stray value, a line of a broken multi-line value) may be
- * a secret.
+ * Whether a line above a key goes into the example. A comment can hold a secret as easily as a
+ * value (`# token: sk_live_...`), so by default only `## ---` section headers do; with
+ * `keepComments` any `#` comment does. A line with `=` (a commented-out assignment) never does,
+ * nor does a line that is not a comment at all (a stray value, part of a broken multi-line value).
  */
-function isSafeComment(line: string): boolean {
-  return line.trimStart().startsWith(ENV_COMMENT_PREFIX) && !line.includes(ENV_ASSIGNMENT_SIGN);
+function carriedComment(line: string, keepComments: boolean): boolean {
+  const text = line.trimStart();
+  if (!text.startsWith(ENV_COMMENT_PREFIX) || line.includes(ENV_ASSIGNMENT_SIGN)) {
+    return false;
+  }
+  return keepComments || text.startsWith(ENV_SECTION_MARKER);
 }
 
 /** Code point order, so the result is the same in every locale. */

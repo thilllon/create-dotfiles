@@ -168,23 +168,38 @@ cli
     "Write .env.example from the keys of every .env and .env.* file in a directory (default: current), values left empty"
   )
   .option("--out <file>", "File to write, relative to the directory (default: .env.example)")
+  .option(
+    "--keep-comments",
+    "Copy the comments above each key too (default: only '## ---' section headers, since a comment may hold a secret)"
+  )
   .option("--sort <mode>", "Also sort the result: section or all")
   .option("--dry-run", "Print the result and write nothing")
   .action(
-    run((dir: string | undefined, flags: { out?: unknown; sort?: unknown; dryRun?: boolean }) => {
-      const summary = EnvExample.generate({
-        dir,
-        out: outFlag(flags.out),
-        sort: flags.sort === undefined ? undefined : EnvFile.parseMode(flags.sort),
-        dryRun: flags.dryRun,
-      });
-      if (flags.dryRun) {
-        process.stdout.write(
-          summary.content.endsWith("\n") ? summary.content : `${summary.content}\n`
-        );
+    run(
+      (
+        dir: string | undefined,
+        flags: {
+          out?: unknown;
+          keepComments?: boolean;
+          sort?: unknown;
+          dryRun?: boolean;
+        }
+      ) => {
+        const summary = EnvExample.generate({
+          dir,
+          out: outFlag(flags.out),
+          keepComments: flags.keepComments,
+          sort: flags.sort === undefined ? undefined : EnvFile.parseMode(flags.sort),
+          dryRun: flags.dryRun,
+        });
+        if (flags.dryRun) {
+          process.stdout.write(
+            summary.content.endsWith("\n") ? summary.content : `${summary.content}\n`
+          );
+        }
+        console.log(Reporter.envExampleSummary(summary));
       }
-      console.log(Reporter.envExampleSummary(summary));
-    })
+    )
   );
 
 cli

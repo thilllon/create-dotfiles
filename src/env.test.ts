@@ -304,6 +304,14 @@ describe("files on disk", () => {
       );
     });
 
+    it("copies the comments with keepComments", () => {
+      EnvExample.generate({ dir, keepComments: true });
+
+      expect(readFileSync(join(dir, ".env.example"), "utf8")).toBe(
+        lines("# database", "DB_URL=", "PORT=", "SENTRY_DSN=")
+      );
+    });
+
     it("writes the union of the keys with every value left empty", () => {
       const summary = EnvExample.generate({ dir });
 
@@ -315,7 +323,7 @@ describe("files on disk", () => {
         written: true,
       });
       const written = readFileSync(join(dir, ".env.example"), "utf8");
-      expect(written).toBe(lines("# database", "DB_URL=", "PORT=", "SENTRY_DSN="));
+      expect(written).toBe(lines("DB_URL=", "PORT=", "SENTRY_DSN="));
       expect(written).not.toContain("secret");
       expect(written).not.toContain("sk-live");
     });
@@ -327,15 +335,7 @@ describe("files on disk", () => {
 
       expect(summary).toMatchObject({ added: ["DB_URL", "SENTRY_DSN"], created: false });
       expect(readFileSync(join(dir, ".env.example"), "utf8")).toBe(
-        lines(
-          "# set by hand",
-          "PORT=3000",
-          "EXTRA=keep",
-          "",
-          "# database",
-          "DB_URL=",
-          "SENTRY_DSN="
-        )
+        lines("# set by hand", "PORT=3000", "EXTRA=keep", "", "DB_URL=", "SENTRY_DSN=")
       );
     });
 
@@ -370,7 +370,7 @@ describe("files on disk", () => {
       EnvExample.generate({ dir, sort: "all" });
 
       expect(readFileSync(join(dir, ".env.example"), "utf8")).toBe(
-        lines("# database", "DB_URL=", "PORT=", "SENTRY_DSN=")
+        lines("DB_URL=", "PORT=", "SENTRY_DSN=")
       );
       createFile(dir, ".env.test", lines("AAA=1"));
       EnvExample.generate({ dir, sort: "all" });
@@ -443,8 +443,23 @@ describe("EnvExample.build", () => {
 
     const built = EnvExample.build([{ name: ".env", content }]);
 
-    expect(built.content).toBe(lines("# Stripe", "STRIPE_KEY=", "OTHER=", "LAST="));
+    expect(built.content).toBe(lines("STRIPE_KEY=", "OTHER=", "LAST="));
     expect(built.content).not.toMatch(/sk_|sk-|ghp_/);
+
+    const kept = EnvExample.build([{ name: ".env", content }], undefined, { keepComments: true });
+    expect(kept.content).toBe(lines("# Stripe", "STRIPE_KEY=", "OTHER=", "LAST="));
+    expect(kept.content).not.toMatch(/sk_|sk-|ghp_/);
+  });
+
+  it("copies only section headers by default, every comment with keepComments", () => {
+    const content = lines("## --- Stripe", "# token: sk_live_NO_EQUALS", "STRIPE_KEY=sk", "B=1");
+
+    expect(EnvExample.build([{ name: ".env", content }]).content).toBe(
+      lines("## --- Stripe", "STRIPE_KEY=", "B=")
+    );
+    expect(
+      EnvExample.build([{ name: ".env", content }], undefined, { keepComments: true }).content
+    ).toBe(lines("## --- Stripe", "# token: sk_live_NO_EQUALS", "STRIPE_KEY=", "B="));
   });
 
   it("keeps the existing example byte for byte and appends in its line ending", () => {
