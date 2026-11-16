@@ -1,3 +1,6 @@
 allowBuilds:
   esbuild: true
   lefthook: true
+# `pnpm add` writes exact versions (no ^ or ~); every dependency is bundled into dist/, so a
+# range would let a fresh install build something other than what the lockfile pinned.
+saveExact: true

@@ -16,7 +16,7 @@ following npm automatically, through the Homebrew tap `thilllon/tap` (see "CI an
 
 - **Runtime**: Node.js 24 (pinned exactly in `mise.toml`; CI also runs 22 and 26 on Ubuntu, and 24 on Windows and macOS)
 - **Toolchain manager**: mise — `mise.toml` pins node, pnpm, lefthook and gitleaks; `mise run <task>` mirrors the pnpm scripts and `mise run ci` runs the whole CI job locally
-- **Package Manager**: pnpm 11 (`pnpm-workspace.yaml` approves the build scripts pnpm 11 would otherwise reject)
+- **Package Manager**: pnpm 11 (`pnpm-workspace.yaml` approves the build scripts pnpm 11 would otherwise reject and sets `saveExact`)
 - **Language**: TypeScript 7 (strict, target ES2022, `module: preserve`, `moduleResolution: bundler`, `types: ["node"]`)
 - **Bundler**: tsdown 0.23 (config: `tsdown.config.mts`, two entries); everything is bundled, so the published package has no runtime dependencies
 - **CLI parsing**: cac 7. **Prompts**: `@clack/prompts` (ESM-only; bundled). **Archives**: `tar`, `yazl`, and `@zip.js/zip.js` for AES-256 zips only (pinned exactly; imported lazily from `lib/zip-core-custom.js`, so it is a separate chunk in `dist/` that plain runs never load)
@@ -85,6 +85,8 @@ Releases happen only in CI (see below): never run `changeset version` or `change
 - Double quotes, semicolons, trailing commas (ES5 style)
 - 2-space indentation, 100 character line width
 - No external runtime dependencies beyond what's bundled by tsdown
+- Every dependency is pinned to an exact version (no `^`/`~`). `saveExact: true` in `pnpm-workspace.yaml`
+  makes `pnpm add` do this; pnpm 11 reads its settings from there, not from `.npmrc`
 - Expected failures throw `DotfileError`; the CLI prints the message and exits 1, never a stack trace
 - Modules are organised as classes (`Planner`, `Collector`, `Restorer`, ...); add behaviour to the class it
   belongs to rather than a new module of free functions
