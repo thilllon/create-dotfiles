@@ -8,6 +8,7 @@ import {
   HARD_EXCLUDED_DIR_NAMES,
   ZIP_PROTECTION_LABEL,
 } from "./constants";
+import type { EnvExampleSummary, EnvSortSummary } from "./env";
 import type { FoundTarget, Plan, PlannedFile } from "./plan";
 import type { RestoreSummary } from "./restore";
 
@@ -123,6 +124,40 @@ export class Reporter {
     lines.push(...summary.failed.map((entry) => `  [FAIL] ${entry.path}: ${entry.error}`));
     lines.push(
       `Restored ${plural(summary.restored.length, "file")}, ${summary.skipped.length} skipped, ${summary.failed.length} failed.`
+    );
+    return lines.join("\n");
+  }
+
+  /** What `env-example` did: the file, where the keys came from and which ones were added. */
+  static envExampleSummary(summary: EnvExampleSummary): string {
+    const from = `from ${summary.sources.join(", ")}`;
+    if (!summary.changed) {
+      return `${summary.path} is up to date: no keys missing ${from}.`;
+    }
+    const verb = summary.created ? "Created" : "Updated";
+    const done = summary.written ? verb : `Would have ${verb.toLowerCase()}`;
+    const what =
+      summary.added.length === 0
+        ? "no keys missing, order changed."
+        : `${plural(summary.added.length, "key")} added.`;
+    return [
+      `${done} ${summary.path} ${from}: ${what}`,
+      ...summary.added.map((key) => `  + ${key}`),
+    ].join("\n");
+  }
+
+  /** What `env-sort` did, one line per file, then the count. */
+  static envSortSummary(summary: EnvSortSummary): string {
+    const changedLabel = summary.check ? "[UNSORTED]" : "[SORTED]";
+    const lines = [
+      ...summary.changed.map((path) => `  ${changedLabel} ${path}`),
+      ...summary.unchanged.map((path) => `  [OK] ${path}`),
+    ];
+    const count = plural(summary.changed.length, "file");
+    lines.push(
+      summary.check
+        ? `${count} not sorted (--mode ${summary.mode}).`
+        : `Sorted ${count} (--mode ${summary.mode}), ${summary.unchanged.length} already sorted.`
     );
     return lines.join("\n");
   }

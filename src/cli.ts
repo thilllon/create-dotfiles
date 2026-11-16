@@ -6,6 +6,8 @@ import {
   Collector,
   DEFAULT_MAX_FILE_SIZE_MB,
   DotfileError,
+  EnvExample,
+  EnvFile,
   InteractiveSession,
   MAX_ZIP_PASSWORD_LENGTH,
   MIN_ZIP_PASSWORD_LENGTH,
@@ -70,6 +72,24 @@ function encryptZipFlag(value: CollectFlags["encryptZip"]): boolean | undefined 
   throw new DotfileError(
     `--encrypt-zip takes no value; the password comes from the prompt, $${ZIP_PASSWORD_ENV} or $${ZIP_PASSWORD_FILE_ENV}`
   );
+}
+
+/**
+ * `--out` must name a file. cac hands over `true` for a bare `--out`, `0` for `--out ""` and a
+ * number for `--out 007`; none of those is written to a file named after it.
+ */
+function outFlag(given: unknown): string | undefined {
+  // Given twice, cac collects the values into a list; the last one wins, as for any flag.
+  const value = Array.isArray(given) ? given.at(-1) : given;
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new DotfileError(
+      "--out needs a file name (a name that is only digits must be written as ./name)"
+    );
+  }
+  return value;
 }
 
 /** Flags that were not given stay undefined so the config file's `[settings]` can fill them. */
@@ -139,6 +159,70 @@ cli
     run((source: string | undefined, flags: { force?: boolean }) => {
       const summary = Restorer.restore({ source, force: flags.force ?? false });
       console.log(Reporter.restoreSummary(summary));
+    })
+  );
+
+cli
+  .command(
+    "env-example [dir]",
+    "Write .env.example from the keys of every .env and .env.* file in a directory (default: current), values left empty"
+  )
+  .option("--out <file>", "File to write, relative to the directory (default: .env.example)")
+  .option(
+    "--keep-comments",
+    "Copy the comments above each key too (default: only '## ---' section headers, since a comment may hold a secret)"
+  )
+  .option("--sort <mode>", "Also sort the result: section or all")
+  .option("--dry-run", "Print the result and write nothing")
+  .action(
+    run(
+      (
+        dir: string | undefined,
+        flags: {
+          out?: unknown;
+          keepComments?: boolean;
+          sort?: unknown;
+          dryRun?: boolean;
+        }
+      ) => {
+        const summary = EnvExample.generate({
+          dir,
+          out: outFlag(flags.out),
+          keepComments: flags.keepComments,
+          sort: flags.sort === undefined ? undefined : EnvFile.parseMode(flags.sort),
+          dryRun: flags.dryRun,
+        });
+        if (flags.dryRun) {
+          process.stdout.write(
+            summary.content.endsWith("\n") ? summary.content : `${summary.content}\n`
+          );
+        }
+        console.log(Reporter.envExampleSummary(summary));
+      }
+    )
+  );
+
+cli
+  .command(
+    "env-sort [...files]",
+    "Sort the keys of .env files alphabetically (default: every .env and .env.* file in the current directory)"
+  )
+  .option(
+    "--mode <mode>",
+    "section: sort within each section opened by a '## ---' line (default); all: sort the whole file"
+  )
+  .option("--check", "Write nothing; exit 1 if a file is not sorted")
+  .action(
+    run((files: string[], flags: { mode?: unknown; check?: boolean }) => {
+      const summary = EnvFile.sortFiles({
+        files,
+        mode: flags.mode === undefined ? undefined : EnvFile.parseMode(flags.mode),
+        check: flags.check,
+      });
+      console.log(Reporter.envSortSummary(summary));
+      if (summary.check && summary.changed.length > 0) {
+        process.exitCode = 1;
+      }
     })
   );
 

@@ -222,6 +222,8 @@ create-dotfiles                 # interactive
 create-dotfiles --auto          # defaults: core targets + secrets, folder output
 create-dotfiles --dry-run       # show the plan, write nothing
 create-dotfiles restore         # put the newest collection back (never overwrites)
+create-dotfiles env-example     # .env.example from every .env* file in this directory
+create-dotfiles env-sort        # sort the keys of every .env* file in this directory
 ```
 
 ### Flags
@@ -280,6 +282,61 @@ create-dotfiles restore --force                  # overwrite files that already 
 ```
 
 Files that already exist are reported as `[SKIP] <path> exists (use --force)`. Restore works from a collection **folder**; extract a zip or tar.gz first (an encrypted zip with `bsdtar -xf`, which asks for the password).
+
+### Project `.env` files
+
+Two helpers for the `.env` files of a project. They work on one directory, the current one by
+default, and never look into subdirectories. Unlike collecting, they do not scan your home
+directory: run them in a project.
+
+```shell
+create-dotfiles env-example                  # ./.env.example from .env, .env.development, .env.production, ...
+create-dotfiles env-example apps/web         # another directory
+create-dotfiles env-example --sort section   # and sort the result
+create-dotfiles env-example --keep-comments  # copy the comments above each key too
+create-dotfiles env-example --dry-run        # print it, write nothing
+
+create-dotfiles env-sort                     # every .env* file here, inside each "## ---" section
+create-dotfiles env-sort --mode all .env     # one file, the whole file as one list
+create-dotfiles env-sort --check             # write nothing; exit 1 if a file is not sorted (CI)
+```
+
+**`env-example`** writes the union of the keys of `.env` and every `.env.*` file, in the order
+they first appear, as `KEY=` with the value left empty.
+Comments are not copied, since a comment can hold a secret as easily as a value; only `## ---`
+section headers come along. `--keep-comments` copies the `#` comments directly above each key
+too, except any line containing `=` (a commented-out value). A line that is not a comment at all
+is never copied. Templates (`.env.example`, `.env.sample`, `.env.template`, and any
+`.env.*.example`) are never read. If `.env.example` already exists it is kept exactly as it is,
+placeholder values included, and only the missing keys are appended; running it again adds
+nothing. Keys that no longer appear in any `.env` file are left for you to remove.
+
+Review `.env.example` before you commit it. New values are always left empty, but whatever
+already was in the file stays, and so does the text of the `## ---` headers (and, with
+`--keep-comments`, of the comments) it copies.
+
+**`env-sort`** orders keys alphabetically (by code point: `A` before `B` before `a`).
+
+- `--mode section` (default): a line starting with `## ---` opens a section. Keys are sorted
+  inside each section and the sections stay in place. A file without such lines is sorted whole.
+- `--mode all`: the whole file is one list. A `## ---` line is then an ordinary comment and moves
+  with the key below it.
+
+Comments directly above a key move with it; a comment followed by a blank line stays at the top of
+its section. A quoted value spanning several lines moves as one. Blank lines are rewritten: none between
+keys, one before a commented key and between sections. CRLF line endings and a byte order mark are
+kept, and sorting a sorted file changes nothing.
+
+```dotenv
+## --- Database
+DB_HOST=
+DB_PORT=
+
+## --- Stripe
+# test keys only
+STRIPE_PUBLIC_KEY=
+STRIPE_SECRET_KEY=
+```
 
 ## What gets collected
 
@@ -383,6 +440,8 @@ The API is a small set of classes, all exported with declarations:
 | `Config`, `Options`       | `~/.dotfilesrc.toml` loading and option resolution (flags > config > defaults)                                                     |
 | `Targets`, `ExcludeRules` | Default targets per platform (`Targets.forPlatform("win32")`) and the never-copied rules                                           |
 | `ZipPassword`             | Password policy, generator, and the environment readers                                                                            |
+| `EnvFile`                 | `.env` text: `sort(text, mode)`, `isSorted`, `keys`, `parse`; `sortFiles(options)` sorts files on disk                             |
+| `EnvExample`              | `build(sources, existing?)` returns the example text; `generate(options)` reads a directory and writes `.env.example`              |
 
 Every constant (default target lists, excludes, limits) is exported too. Pass `platform: "win32"` (or `"darwin"`, `"linux"`) in the options to plan for another OS. Everything is bundled; the package has no runtime dependencies.
 

@@ -18,6 +18,19 @@ export {
   type ResolvedOptions,
 } from "./config";
 export * from "./constants";
+export {
+  type EnvDocument,
+  type EnvEntry,
+  EnvExample,
+  type EnvExampleOptions,
+  type EnvExampleSummary,
+  EnvFile,
+  type EnvSection,
+  type EnvSortMode,
+  type EnvSortOptions,
+  type EnvSortSummary,
+  type EnvSource,
+} from "./env";
 export { DotfileError } from "./errors";
 export {
   type FoundTarget,

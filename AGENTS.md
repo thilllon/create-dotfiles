@@ -44,6 +44,7 @@ src/
   plan.ts              # Planner: plan(), filter(), scanEnvFiles(), collectionName()
   collect.ts           # Collector (stage files, write folder/zip/tar, summary) and ZipPassword (policy, generator, env readers)
   restore.ts           # Restorer: restore(), findLatestCollection()
+  env.ts               # EnvFile (parse and sort .env text, sort files) and EnvExample (.env.example as the union of keys)
   report.ts            # Reporter: summary, "found on this machine" and "never copied" text
   interactive.ts       # InteractiveSession (the prompt flow behind a Prompter interface) and ClackPrompter (Prompter on @clack/prompts)
   errors.ts            # DotfileError
@@ -234,6 +235,27 @@ Releases happen only in CI (see below): never run `changeset version` or `change
 - **Nothing reads the home directory on `--help`/`--version`**; everything is constructed inside
   command actions, never at module scope (this was a real bug once).
 - **Non-TTY** (piped, CI): prints one notice and runs as `--auto`.
+- **Project `.env` tools** (`env-example`, `env-sort`; `EnvExample`, `EnvFile` in `env.ts`) work on
+  one directory, default the current one (nothing stops that being the home directory), never
+  recursively; unlike collecting they never scan the home directory. They
+  read `.env` and `.env.*` regular files (`Targets.isEnvFile`).
+  - `env-example` writes `KEY=` lines only: new values never reach the example (existing example
+    text and copied header/comment text do, so the docs tell users to review it). Of the lines directly above a key
+    only `## ---` headers come along by default (a comment may hold a secret); `--keep-comments`
+    (`keepComments`) adds the other `#` comments. A line with `=` (a commented-out value) and any
+    non-comment line there (a stray value) are never copied. dotenv's `KEY: value` form counts as a key, and key names use
+    dotenv's characters (`[\w.-]+`). A multi-line value closes at the next unescaped quote (`\`
+    escapes in all three quote styles) only if just whitespace or a comment follows it;
+    otherwise, as in dotenv, the opening line is a single-line value. Templates
+    (`ENV_TEMPLATE_FILES`, `*.example`/`.sample`/`.template`) and the output file itself are never
+    sources. An existing example is kept byte for byte and only missing keys are appended, in its line
+    ending, so a second run is a no-op.
+  - `env-sort` sorts by code point, stable. `section` mode (default) treats a line starting with
+    `## ---` (`ENV_SECTION_MARKER`) as a section header and sorts inside each section; `all` mode
+    treats it as a comment. Comments with no blank line before the key move with it; others stay
+    at the top of their section. Quoted multi-line values move as one entry. Output rewrites blank
+    lines (none between keys, one before a commented key and between sections), keeps CRLF and a BOM, and is idempotent (tested). `--check` writes nothing and
+    exits 1 when a file would change. Read and write errors are DotfileErrors.
 - **Restore** defaults to the newest `dotfiles-*` directory by name, refuses archives and the home
   directory itself as a source, skips existing files unless `--force`.
 - **Packaging**: CommonJS. `bin` → `dist/cli.cjs`; `main`/`types`/`exports` → `dist/index.cjs` and

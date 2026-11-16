@@ -474,6 +474,69 @@ describe("cli", () => {
     });
   });
 
+  describe("env-example and env-sort", () => {
+    let project: string;
+
+    beforeEach(() => {
+      project = join(tempHome, "project");
+      createFile(project, ".env", "B=secret\nA=1\n");
+      createFile(project, ".env.production", "C=prod\n");
+    });
+
+    it("writes .env.example from the .env files of a directory", () => {
+      const { status, stdout } = runCli("env-example", project);
+
+      expect(status).toBe(0);
+      expect(stdout).toContain("3 keys added.");
+      expect(readFileSync(join(project, ".env.example"), "utf8")).toBe("B=\nA=\nC=\n");
+    });
+
+    it("prints the example and writes nothing with --dry-run, sorted with --sort", () => {
+      const { status, stdout } = runCli("env-example", project, "--dry-run", "--sort", "all");
+
+      expect(status).toBe(0);
+      expect(stdout).toContain("A=\nB=\nC=\n");
+      expect(stdout).toContain("Would have created");
+      expect(existsSync(join(project, ".env.example"))).toBe(false);
+    });
+
+    it("sorts files in place, and --check exits 1 without writing", () => {
+      const file = join(project, ".env");
+
+      const check = runCli("env-sort", "--check", file);
+      expect(check.status).toBe(1);
+      expect(check.stdout).toContain(`[UNSORTED] ${file}`);
+      expect(readFileSync(file, "utf8")).toBe("B=secret\nA=1\n");
+
+      const sorted = runCli("env-sort", "--mode", "all", file);
+      expect(sorted.status).toBe(0);
+      expect(readFileSync(file, "utf8")).toBe("A=1\nB=secret\n");
+      expect(runCli("env-sort", "--check", file).status).toBe(0);
+    });
+
+    it("rejects an --out that is not a file name", () => {
+      for (const args of [
+        ["--out", ""],
+        ["--out", "007"],
+      ]) {
+        const { status, stderr } = runCli("env-example", project, ...args);
+
+        expect(status).toBe(1);
+        expect(stderr).toContain("Error: --out needs a file name");
+      }
+      expect(existsSync(join(project, "0"))).toBe(false);
+      expect(runCli("env-example", project, "--out", "a", "--out", "./b").status).toBe(0);
+      expect(existsSync(join(project, "b"))).toBe(true);
+    });
+
+    it("rejects an unknown mode", () => {
+      const { status, stderr } = runCli("env-sort", "--mode", "alpha", join(project, ".env"));
+
+      expect(status).toBe(1);
+      expect(stderr).toContain('Error: Unknown sort mode "alpha"');
+    });
+  });
+
   describe("restore", () => {
     const older = "dotfiles-20260101-000000";
     const newest = "dotfiles-20260902-110342";
