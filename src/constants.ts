@@ -457,10 +457,14 @@ export const ENV_SORT_MODES: readonly EnvSortMode[] = ["section", "all"];
 export const DEFAULT_ENV_SORT_MODE: EnvSortMode = "section";
 
 /**
- * `KEY=...`, `export KEY=...`, or dotenv's `KEY: ...` form; group 1 is the key. Everything up to
+ * `KEY=...`, `export KEY=...`, or dotenv's `KEY: ...` form; group 1 is the key, with the
+ * characters dotenv allows anywhere in it (`1PASSWORD`, `.TOKEN` and `-X` are keys too). Everything up to
  * the end of the match is the key part; the rest of the line is the value.
  */
-export const ENV_KEY_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*=|:(?=\s|$))/;
+export const ENV_KEY_LINE = /^\s*(?:export\s+)?([\w.-]+)(?:\s*=|:(?=\s|$))/;
+
+/** What may follow the closing quote of a value: whitespace, then optionally a comment. */
+export const ENV_VALUE_TAIL = /^\s*(?:#.*)?$/;
 
 /** What a comment line starts with (after leading whitespace). */
 export const ENV_COMMENT_PREFIX = "#";

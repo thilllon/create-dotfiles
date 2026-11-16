@@ -68,6 +68,47 @@ describe("EnvFile.parse", () => {
     }
   });
 
+  it("does not let a quote that opens a later assignment close an unclosed value", () => {
+    expect(EnvFile.keys(lines('BROKEN="unterminated', 'NEXT="ok"', "LAST=1"))).toEqual([
+      "BROKEN",
+      "NEXT",
+      "LAST",
+    ]);
+  });
+
+  it("honours backslash-escaped quotes inside single quotes and backticks too", () => {
+    for (const quote of ["'", "`"]) {
+      const doc = EnvFile.parse(
+        lines(
+          `Z=${quote}first`,
+          `it\\${quote}s still the value`,
+          "## --- not a header",
+          `end${quote}`,
+          "A=1"
+        )
+      );
+
+      expect(doc.sections).toHaveLength(1);
+      expect(doc.sections[0].entries.map((e) => e.key)).toEqual(["Z", "A"]);
+    }
+  });
+
+  it("accepts a closing quote followed by a comment", () => {
+    expect(EnvFile.parse(lines('A="x', 'y" # note', "B=1")).sections[0].entries[0].lines).toEqual([
+      'A="x',
+      'y" # note',
+    ]);
+  });
+
+  it("accepts every key name dotenv does", () => {
+    expect(EnvFile.keys(lines("1PASSWORD=x", ".TOKEN=y", "-FLAG=z", "a.b-c_d=w"))).toEqual([
+      "1PASSWORD",
+      ".TOKEN",
+      "-FLAG",
+      "a.b-c_d",
+    ]);
+  });
+
   it("reads dotenv's `KEY: value` form as a key", () => {
     expect(EnvFile.keys(lines("A: 1", "B:", "C:not-a-key", "URL=http://x"))).toEqual([
       "A",
@@ -449,6 +490,21 @@ describe("EnvExample.build", () => {
     const kept = EnvExample.build([{ name: ".env", content }], undefined, { keepComments: true });
     expect(kept.content).toBe(lines("# Stripe", "STRIPE_KEY=", "OTHER=", "LAST="));
     expect(kept.content).not.toMatch(/sk_|sk-|ghp_/);
+  });
+
+  it("never copies the inside of a multi-line value, even a line that looks like a header", () => {
+    const content = lines(
+      "Z='first",
+      "it\\'s still a value",
+      "## --- sk_live_SECRET",
+      "FAKE=value",
+      "end'",
+      "A=1"
+    );
+
+    const built = EnvExample.build([{ name: ".env", content }]);
+
+    expect(built).toEqual({ content: lines("Z=", "A="), added: ["Z", "A"] });
   });
 
   it("copies only section headers by default, every comment with keepComments", () => {

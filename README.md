@@ -285,8 +285,9 @@ Files that already exist are reported as `[SKIP] <path> exists (use --force)`. R
 
 ### Project `.env` files
 
-Two helpers for the `.env` files of a project. They work on one directory (the current one by
-default), never on the home directory, and never look into subdirectories.
+Two helpers for the `.env` files of a project. They work on one directory, the current one by
+default, and never look into subdirectories. Unlike collecting, they do not scan your home
+directory: run them in a project.
 
 ```shell
 create-dotfiles env-example                  # ./.env.example from .env, .env.development, .env.production, ...
@@ -301,7 +302,7 @@ create-dotfiles env-sort --check             # write nothing; exit 1 if a file i
 ```
 
 **`env-example`** writes the union of the keys of `.env` and every `.env.*` file, in the order
-they first appear, as `KEY=` with the value left empty, so no secret reaches a file you commit.
+they first appear, as `KEY=` with the value left empty.
 Comments are not copied, since a comment can hold a secret as easily as a value; only `## ---`
 section headers come along. `--keep-comments` copies the `#` comments directly above each key
 too, except any line containing `=` (a commented-out value). A line that is not a comment at all
@@ -309,6 +310,10 @@ is never copied. Templates (`.env.example`, `.env.sample`, `.env.template`, and 
 `.env.*.example`) are never read. If `.env.example` already exists it is kept exactly as it is,
 placeholder values included, and only the missing keys are appended; running it again adds
 nothing. Keys that no longer appear in any `.env` file are left for you to remove.
+
+Review `.env.example` before you commit it. New values are always left empty, but whatever
+already was in the file stays, and so does the text of the `## ---` headers (and, with
+`--keep-comments`, of the comments) it copies.
 
 **`env-sort`** orders keys alphabetically (by code point: `A` before `B` before `a`).
 

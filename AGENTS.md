@@ -236,13 +236,17 @@ Releases happen only in CI (see below): never run `changeset version` or `change
   command actions, never at module scope (this was a real bug once).
 - **Non-TTY** (piped, CI): prints one notice and runs as `--auto`.
 - **Project `.env` tools** (`env-example`, `env-sort`; `EnvExample`, `EnvFile` in `env.ts`) work on
-  one directory, default the current one, never the home directory and never recursively. They
+  one directory, default the current one (nothing stops that being the home directory), never
+  recursively; unlike collecting they never scan the home directory. They
   read `.env` and `.env.*` regular files (`Targets.isEnvFile`).
-  - `env-example` writes `KEY=` lines only: values never reach the example. Of the lines directly above a key
+  - `env-example` writes `KEY=` lines only: new values never reach the example (existing example
+    text and copied header/comment text do, so the docs tell users to review it). Of the lines directly above a key
     only `## ---` headers come along by default (a comment may hold a secret); `--keep-comments`
     (`keepComments`) adds the other `#` comments. A line with `=` (a commented-out value) and any
-    non-comment line there (a stray value) are never copied. dotenv's `KEY: value` form counts as a key. An unclosed quote
-    is a single-line value, as in dotenv. Templates
+    non-comment line there (a stray value) are never copied. dotenv's `KEY: value` form counts as a key, and key names use
+    dotenv's characters (`[\w.-]+`). A multi-line value closes at the next unescaped quote (`\`
+    escapes in all three quote styles) only if just whitespace or a comment follows it;
+    otherwise, as in dotenv, the opening line is a single-line value. Templates
     (`ENV_TEMPLATE_FILES`, `*.example`/`.sample`/`.template`) and the output file itself are never
     sources. An existing example is kept byte for byte and only missing keys are appended, in its line
     ending, so a second run is a no-op.

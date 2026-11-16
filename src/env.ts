@@ -12,6 +12,7 @@ import {
   ENV_SORT_MODES,
   ENV_TEMPLATE_FILES,
   ENV_TEMPLATE_SUFFIXES,
+  ENV_VALUE_TAIL,
   ENV_FILE_NAME,
   LINE_BREAK,
 } from "./constants";
@@ -107,10 +108,12 @@ export class EnvFile {
       pending = [];
       const quote = openQuote(line.slice(match[0].length));
       if (quote !== undefined) {
-        // A quote that never closes is a typo, not a value running to the end of the file:
-        // dotenv reads such a line as a single-line value, and so does this.
-        const close = lines.findIndex((next, j) => j > i && closesQuote(next, quote));
-        if (close !== -1) {
+        // The value ends at the next unescaped quote, which must end its line (bar a comment).
+        // Anything else (a quote that never closes, or one that opens the next assignment) is
+        // a typo, not a value running on: dotenv reads such a line as a single-line value, and
+        // so does this.
+        const close = closingLine(lines, i + 1, quote);
+        if (close !== undefined) {
           entry.lines.push(...lines.slice(i + 1, close + 1));
           i = close;
         }
@@ -418,21 +421,37 @@ function openQuote(value: string): string | undefined {
   if (quote === undefined) {
     return undefined;
   }
-  return closesQuote(text.slice(1), quote) ? undefined : quote;
+  return findQuote(text.slice(1), quote) === -1 ? quote : undefined;
 }
 
-/** Whether the text holds the closing quote; inside double quotes a backslash escapes. */
-function closesQuote(text: string, quote: string): boolean {
+/**
+ * The line that closes a multi-line value opened on an earlier line: the first line holding an
+ * unescaped `quote`, provided only whitespace or a comment follows it. Undefined when there is
+ * no such line, so the opening line is read as a single-line value.
+ */
+function closingLine(lines: readonly string[], from: number, quote: string): number | undefined {
+  for (let j = from; j < lines.length; j++) {
+    const index = findQuote(lines[j], quote);
+    if (index === -1) {
+      continue;
+    }
+    return ENV_VALUE_TAIL.test(lines[j].slice(index + 1)) ? j : undefined;
+  }
+  return undefined;
+}
+
+/** The index of the first `quote` not escaped by a backslash, or -1. dotenv escapes all three. */
+function findQuote(text: string, quote: string): number {
   for (let i = 0; i < text.length; i++) {
-    if (quote === '"' && text[i] === "\\") {
+    if (text[i] === "\\") {
       i++;
       continue;
     }
     if (text[i] === quote) {
-      return true;
+      return i;
     }
   }
-  return false;
+  return -1;
 }
 
 function isFile(path: string): boolean {
