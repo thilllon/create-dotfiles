@@ -15,19 +15,19 @@ importers:
         specifier: 1.9.0
         version: 1.9.0
       '@types/node':
-        specifier: ^26.4.1
+        specifier: 26.6.6
         version: 26.6.6
       '@types/yazl':
         specifier: 3.3.1
         version: 3.3.1
       '@vitest/coverage-v8':
-        specifier: ^4.1.11
+        specifier: 4.1.11
         version: 4.1.11(vitest@4.1.11)
       '@zip.js/zip.js':
         specifier: 2.24.0
         version: 2.24.0
       cac:
-        specifier: ^7.0.0
+        specifier: 7.1.0
         version: 7.1.0
       fflate:
         specifier: 0.8.3
@@ -36,28 +36,28 @@ importers:
         specifier: 2.2.2
         version: 2.2.2
       oxfmt:
-        specifier: ^0.78.0
+        specifier: 0.78.0
         version: 0.78.0
       oxlint:
-        specifier: ^1.89.0
+        specifier: 1.93.0
         version: 1.93.0
       smol-toml:
-        specifier: ^1.8.0
+        specifier: 1.9.1
         version: 1.9.1
       tar:
-        specifier: ^7.5.22
+        specifier: 7.5.23
         version: 7.5.23
       tsdown:
-        specifier: ^0.23.0
+        specifier: 0.23.7
         version: 0.23.7(tsx@4.23.15)(typescript@7.0.2)(unrun@0.2.27)
       tsx:
-        specifier: ^4.23.13
+        specifier: 4.23.15
         version: 4.23.15
       typescript:
-        specifier: ^7.0.2
+        specifier: 7.0.2
         version: 7.0.2
       vitest:
-        specifier: ^4.1.11
+        specifier: 4.1.11
         version: 4.1.11(@types/node@26.6.6)(@vitest/coverage-v8@4.1.11)(vite@7.3.1(@types/node@26.6.6)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
       yazl:
         specifier: 3.3.1
