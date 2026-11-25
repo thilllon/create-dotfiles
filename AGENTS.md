@@ -318,6 +318,10 @@ exclude = [".config/kitty", "Snapshots"] # paths or directory names to exclude
 - `src/cli.ts` is excluded from coverage thresholds on purpose: `cli.test.ts` exercises it by
   spawning a real subprocess (the only way to catch module-load side effects), and v8 cannot
   instrument across a process boundary. Keep `cli.ts` thin so that exclusion stays honest
+- Each `cli.test.ts` spawn has its own timeout (`CHILD_TIMEOUT_MS`), and the suite's test timeout
+  is four times that. vitest cannot interrupt a synchronous test and only checks the elapsed time
+  once it returns, so with its 5 s default a stall of the machine failed tests that had passed,
+  and a hung child was never stopped. A test that spawns more than three times needs a larger budget
 - The interactive flow is tested through a fake `Prompter`; `ClackPrompter` is tested in `interactive.clack.test.ts` with
   `@clack/prompts` mocked. No test drives a real TTY
 - Zip contents are verified by reading the central directory with `fflate`; tar contents with
