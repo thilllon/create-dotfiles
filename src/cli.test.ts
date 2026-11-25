@@ -16,7 +16,16 @@ const tsxCli = createRequire(join(repoRoot, "package.json")).resolve("tsx/cli");
 const cliPath = join(repoRoot, "src", "cli.ts");
 const COLLECTION = /^dotfiles-\d{8}-\d{6}$/;
 
-describe("cli", () => {
+// A spawn takes about 150 ms, but each one blocks the worker, and vitest cannot interrupt a
+// synchronous test: it compares the elapsed time with the test timeout only once the test
+// returns. With the 5 s default, a stall during a spawn (heavy load, a suspended process)
+// failed a test that had passed, and a hung CLI blocked the whole run. So the child's own
+// timeout catches a hang, and the test budget only has to cover the slowest passing test,
+// which spawns three times.
+const CHILD_TIMEOUT_MS = 30_000;
+const TEST_TIMEOUT_MS = 4 * CHILD_TIMEOUT_MS;
+
+describe("cli", { timeout: TEST_TIMEOUT_MS }, () => {
   let tempHome: string;
 
   beforeEach(() => {
@@ -48,7 +57,22 @@ describe("cli", () => {
       env: { ...env, ...extraEnv },
       encoding: "utf8",
       cwd: tmpdir(),
+      timeout: CHILD_TIMEOUT_MS,
     });
+    // A timeout, a failed spawn or a signal that killed tsx's wrapper is not a result to assert
+    // on, so say what happened and show what the CLI printed. Check `error`, not the status: on
+    // a timeout the wrapper passes the SIGTERM on to the CLI and exits 143 (the status is null
+    // only on Windows, where the wrapper is terminated outright).
+    if (result.error !== undefined || result.signal !== null) {
+      const reason =
+        (result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT"
+          ? `did not exit within ${CHILD_TIMEOUT_MS / 1000} s`
+          : (result.error?.message ?? `was killed by ${result.signal}`);
+      throw new Error(
+        `create-dotfiles ${args.join(" ")}: ${reason}\n` +
+          `stdout:\n${result.stdout ?? ""}\nstderr:\n${result.stderr ?? ""}`
+      );
+    }
     return {
       status: result.status,
       stdout: result.stdout ?? "",
