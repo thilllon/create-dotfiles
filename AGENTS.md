@@ -97,7 +97,10 @@ Releases happen only in CI (see below): never run `changeset version` or `change
 
 ## Git Conventions
 
-- Do NOT add `Co-Authored-By` lines to commit messages. A `Claude-Session:` trailer is fine.
+- No AI attribution in anything that leaves the machine: commit messages, PR titles and
+  descriptions, issues, review comments, release notes and `CHANGELOG.md`. That means no
+  `Co-Authored-By: Claude …` lines, no `Claude-Session:` trailers or session URLs, and no
+  "Generated with …" lines.
 - `main` is protected (pull requests required). The maintainer pushes directly as an admin;
   GITHUB_TOKEN cannot, which is why the release workflow pushes its version commit with the
   maintainer's `RELEASE_TOKEN` (see below)
